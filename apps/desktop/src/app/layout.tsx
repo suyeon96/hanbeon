@@ -3,10 +3,41 @@ import { resetCss } from '@devup-ui/reset-css'
 import type { Metadata } from 'next'
 
 resetCss()
+
+// `@font-face`는 객체 형태로 넘길 수 없어 원본 CSS로 적는다.
+//
+// 이 앱은 오프라인에서 동작해야 하므로 CDN 폰트를 쓸 수 없다. 그래서 Pretendard를
+// `public/fonts`에 넣어 함께 배포한다.
+//
+// `font-display: swap` — `block`이면 글꼴을 읽는 동안 글자가 사라진다. 이 화면은
+// 사용자가 조작할 수 있는 유일한 통로라 한순간도 비어 있으면 안 된다.
+// 값을 쓰지 않는 표현식이지만 이 형태여야 한다. `void`를 붙이면 devup-ui가
+// 태그드 템플릿을 알아보지 못해 빌드가 깨진다.
+// eslint-disable-next-line no-unused-expressions
+globalCss`
+  @font-face {
+    font-family: 'Pretendard';
+    src: url('/fonts/PretendardVariable.woff2') format('woff2-variations');
+    font-weight: 45 920;
+    font-style: normal;
+    font-display: swap;
+  }
+`
+
 globalCss({
   '*': {
+    // 글꼴 이름은 이 한 곳에서만 정한다. 글자 크기 토큰(devup.json)이 각자
+    // 글꼴을 들고 있으면 그쪽이 이 규칙을 덮어써서, 대체 글꼴이 통째로 무시된다.
+    //
+    // 문자열을 상수로 빼지 않는다. devup-ui는 리터럴만 CSS로 뽑아내고, 변수를
+    // 넘기면 정의되지 않는 CSS 변수(`var(--f)`)로 바꿔 규칙 자체가 무효가 된다.
+    //
+    // 뒤의 시스템 글꼴은 폰트 파일을 읽지 못했을 때를 위한 것이다. 대체 글꼴이
+    // 없으면 브라우저 기본 명조로 떨어지는데, 작은 크기의 명조는 저시력
+    // 사용자에게 특히 불리하다. `Pretendard Variable`은 이 글꼴을 시스템에 직접
+    // 설치한 기기에서 잡히는 이름이다.
     fontFamily:
-      'Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif',
+      'Pretendard, "Pretendard Variable", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", "Malgun Gothic", system-ui, sans-serif',
   },
   // floating 창은 투명 배경 위에 컨트롤러만 떠 있어야 한다.
   // 배경이 필요한 화면(설정)은 각자 컨테이너에서 칠한다.

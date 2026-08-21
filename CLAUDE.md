@@ -75,8 +75,24 @@ bun run test            # bun test + cargo tarpaulin
   확인한다.** `contrast`는 저시력 사용자용 흑배경·노랑 커서 조합이라 회색 계열
   중간톤을 쓰면 그대로 안 보이게 된다.
 
+**스타일 값은 리터럴로 적는다.** devup-ui는 빌드 때 값을 뽑아 CSS로 만드는데,
+상수나 변수를 넘기면 뽑아내지 못하고 정의되지 않는 CSS 변수(`var(--f)` 같은)로
+바꿔 놓는다. 규칙이 통째로 무효가 되면서 화면에서만 티가 나므로, 공통 값을 상수로
+빼고 싶어질 때마다 빌드된 CSS를 확인한다.
+
+### 글꼴
+
 Tauri 앱은 오프라인에서 동작해야 한다. **CDN 폰트·외부 이미지·런타임 네트워크
 의존을 프론트에 넣지 않는다.** (`apps/front`, `apps/admin`은 웹이므로 예외)
+
+그래서 Pretendard를 `apps/desktop/public/fonts/`에 넣어 함께 배포하고,
+`app/layout.tsx`의 `globalCss`에서 `@font-face`로 등록한다. `@font-face`는 객체가
+아니라 태그드 템플릿(원본 CSS) 형태로만 넘어간다.
+
+**글꼴 이름은 `layout.tsx` 한 곳에서만 정한다.** `devup.json`의 typography 토큰에
+`fontFamily`를 넣지 않는다 — 넣으면 그 클래스가 전역 규칙을 덮어써서 대체 글꼴이
+통째로 무시되고, 폰트를 읽지 못한 기기에서 브라우저 기본 명조로 떨어진다.
+작은 크기의 명조는 저시력 사용자에게 특히 불리하다.
 
 Next.js는 `output: 'export'`다. 서버 컴포넌트의 데이터 패칭, 라우트 핸들러,
 미들웨어, `next/image` 최적화는 쓸 수 없다. 새 창을 추가하면
