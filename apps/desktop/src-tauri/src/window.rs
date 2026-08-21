@@ -1,17 +1,35 @@
 //! floating 컨트롤러 창의 배치와 플랫폼별 창 속성.
 
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+
 use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
+
+use crate::profile::Profile;
 
 /// 화면 가장자리에서 띄울 여백(논리 px).
 const EDGE_MARGIN: f64 = 24.0;
 
-pub fn prepare_floating(window: &WebviewWindow) -> tauri::Result<()> {
-    place_bottom_right(window)?;
+/// 저장된 위치를 되살릴 때 화면 안에 최소한 이만큼은 남아 있어야 한다(물리 px).
+const MIN_VISIBLE: i32 = 80;
+
+/// 이동이 이 시간 동안 멎으면 드래그가 끝난 것으로 본다.
+const SETTLE: Duration = Duration::from_millis(400);
+
+/// 이동이 멎었는지 확인하는 주기.
+const WATCH_TICK: Duration = Duration::from_millis(100);
+
+pub fn prepare_floating(window: &WebviewWindow, saved: Option<(i32, i32)>) -> tauri::Result<()> {
+    match saved {
+        Some(position) => restore(window, position)?,
+        None => place_bottom_right(window)?,
+    }
     make_non_activating(window);
     Ok(())
 }
 
-/// 기본 위치는 주 모니터 우하단. 사용자가 옮긴 위치는 프로필에 저장해 복원한다(M3).
+/// 기본 위치는 주 모니터 우하단.
 fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     let Some(monitor) = window.current_monitor()? else {
         return Ok(());
@@ -29,6 +47,43 @@ fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     window.set_position(PhysicalPosition::new(x, y))
 }
 
+/// 사용자가 옮겨 둔 위치로 되돌린다.
+///
+/// 모니터를 떼거나 해상도가 바뀌면 지난번 위치가 화면 밖일 수 있다. 그대로
+/// 두면 창이 보이지 않고, 스위치만 쓰는 사용자는 창을 되찾을 수단이 없다.
+fn restore(window: &WebviewWindow, position: (i32, i32)) -> tauri::Result<()> {
+    if on_screen(window, position)? {
+        window.set_position(PhysicalPosition::new(position.0, position.1))
+    } else {
+        place_bottom_right(window)
+    }
+}
+
+/// 이 위치에 두었을 때 어느 모니터에든 창이 충분히 걸치는지.
+fn on_screen(window: &WebviewWindow, (x, y): (i32, i32)) -> tauri::Result<bool> {
+    let size = window.outer_size()?;
+    let width = size.width as i32;
+    let height = size.height as i32;
+
+    // 창이 화면보다 작을 수 있으므로 요구치는 창 크기로 한 번 더 깎는다.
+    let need_x = MIN_VISIBLE.min(width);
+    let need_y = MIN_VISIBLE.min(height);
+
+    for monitor in window.available_monitors()? {
+        let origin = monitor.position();
+        let screen = monitor.size();
+
+        let overlap_x = (x + width).min(origin.x + screen.width as i32) - x.max(origin.x);
+        let overlap_y = (y + height).min(origin.y + screen.height as i32) - y.max(origin.y);
+
+        if overlap_x >= need_x && overlap_y >= need_y {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
 /// floating 창이 대상 앱의 포커스를 뺏으면 안 된다. 포커스를 가져가는 순간
 /// 우리가 주입한 Tab/Enter가 대상 앱이 아니라 우리 창으로 들어간다.
 ///
@@ -39,6 +94,95 @@ fn make_non_activating(window: &WebviewWindow) {
     #[cfg(target_os = "windows")]
     {
         // TODO(M1-win): WS_EX_NOACTIVATE 추가. Windows 실기에서 검증한다.
+    }
+}
+
+/// 활성 상태를 직전 앱에 돌려준다.
+///
+/// 창을 끌면 macOS는 우리 앱을 활성 앱으로 올린다. 그대로 두면 이후 주입한
+/// Tab이 대상 앱이 아니라 우리 창으로 들어가고, 스위치만 쓰는 사용자는 다른
+/// 앱을 다시 클릭할 수단이 없어 조작 자체가 막힌다. 창을 옮길 수 있게 된
+/// 이상, 옮긴 뒤 원래대로 돌려놓는 것까지가 한 동작이다.
+pub fn release_activation(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        // AppKit은 메인 스레드에서만 만질 수 있다.
+        let _ = app.run_on_main_thread(|| {
+            use objc2::MainThreadMarker;
+            use objc2_app_kit::NSApplication;
+
+            if let Some(mtm) = MainThreadMarker::new() {
+                NSApplication::sharedApplication(mtm).deactivate();
+            }
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+    }
+}
+
+/// 마지막으로 관측한 이동. 시각을 함께 들고 있어야 멎었는지 알 수 있다.
+type LastMove = Option<(Instant, (i32, i32))>;
+
+/// 드래그 중 쏟아지는 이동 이벤트를 모아 두는 곳.
+///
+/// 창을 끄는 동안에는 이동이 픽셀 단위로 들어온다. 그때마다 파일에 쓰면
+/// 디스크가 아니라 조작감이 먼저 무너진다. 이동이 멎은 뒤 한 번만 저장한다.
+#[derive(Clone, Default)]
+pub struct MoveWatch(Arc<Mutex<LastMove>>);
+
+impl MoveWatch {
+    pub fn note(&self, position: (i32, i32)) {
+        if let Ok(mut slot) = self.0.lock() {
+            *slot = Some((Instant::now(), position));
+        }
+    }
+
+    /// 이동이 멎었으면 마지막 위치를 꺼낸다.
+    fn take_settled(&self) -> Option<(i32, i32)> {
+        let mut slot = self.0.lock().ok()?;
+        match *slot {
+            Some((at, position)) if at.elapsed() >= SETTLE => {
+                *slot = None;
+                Some(position)
+            }
+            _ => None,
+        }
+    }
+
+    /// 이동이 멎기를 기다렸다가 위치를 저장하고 활성 상태를 돌려준다.
+    pub fn watch(&self, app: AppHandle, profile: Arc<Mutex<Profile>>) {
+        let watch = self.clone();
+
+        thread::spawn(move || {
+            loop {
+                thread::sleep(WATCH_TICK);
+
+                let Some(position) = watch.take_settled() else {
+                    continue;
+                };
+
+                // 위치가 실제로 바뀐 경우에만 움직인다. 시작할 때 우리가 부른
+                // `set_position`도 이동으로 들어오는데, 그때까지 활성 앱을
+                // 건드리면 사용자가 쓰던 창이 이유 없이 뒤로 밀린다.
+                let moved = match profile.lock() {
+                    Ok(mut profile) if profile.window_position != Some(position) => {
+                        profile.window_position = Some(position);
+                        if let Err(message) = profile.save(&app) {
+                            eprintln!("창 위치를 저장하지 못했습니다. {message}");
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+
+                if moved {
+                    release_activation(&app);
+                }
+            }
+        });
     }
 }
 

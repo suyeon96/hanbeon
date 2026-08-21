@@ -24,7 +24,9 @@
         "scanIdleBg": "#FFFFFF",
         "scanIdleText": "#1F2937",
         "undoBg": "#FFF3D6",
-        "undoText": "#7A4A00"
+        "undoText": "#7A4A00",
+        "progressTrack": "#E4EBEA",
+        "dragGrip": "#B9C7C6"
       },
       "dark": {
         "primary": "#4FD1C5",
@@ -49,7 +51,9 @@
         "scanIdleBg": "#182020",
         "scanIdleText": "#E4EDEC",
         "undoBg": "#3B2E0C",
-        "undoText": "#FBBF24"
+        "undoText": "#FBBF24",
+        "progressTrack": "#232E2E",
+        "dragGrip": "#4C5A5A"
       },
       "contrast": {
         "primary": "#FFD400",
@@ -74,7 +78,9 @@
         "scanIdleBg": "#000000",
         "scanIdleText": "#FFFFFF",
         "undoBg": "#FFD400",
-        "undoText": "#000000"
+        "undoText": "#000000",
+        "progressTrack": "#000000",
+        "dragGrip": "#FFFFFF"
       }
     },
     "typography": {
