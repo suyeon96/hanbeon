@@ -1,0 +1,51 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`SwitchButton 순환·머무름·비활성을 구분해 렌더한다 1`] = `
+"<div aria-label="다음으로" class="display-0-flex--0 flex-direction-0-column--0 border-radius-0-14px--255 gap-0-0--255 justify-content-0-center--255 min-height-0-60px--255 background-0-$scanCursorBg--255 border-color-0-$scanCursor--255 border-style-0-solid--255 border-width-0-5px--255 color-0-$scanCursorText--255">
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-switchLabel">
+      &gt;
+    </span>
+  </div>
+</div>"
+`;
+
+exports[`SwitchButton 순환·머무름·비활성을 구분해 렌더한다 2`] = `
+"<div aria-label="다음으로" class="display-0-flex--0 flex-direction-0-column--0 border-radius-0-14px--255 gap-0-0--255 justify-content-0-center--255 min-height-0-60px--255 background-0-$scanCursorBg--255 border-color-0-$scanCursor--255 border-style-0-dashed--255 border-width-0-5px--255 color-0-$scanCursorText--255">
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-switchLabel">
+      &gt;
+    </span>
+  </div>
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-caption">
+      한 번 더
+    </span>
+  </div>
+</div>"
+`;
+
+exports[`SwitchButton 순환·머무름·비활성을 구분해 렌더한다 3`] = `
+"<div aria-label="이전으로" class="display-0-flex--0 flex-direction-0-column--0 border-radius-0-14px--255 gap-0-0--255 justify-content-0-center--255 min-height-0-60px--255 background-0-$scanIdleBg--255 border-color-0-$border--255 border-style-0-solid--255 border-width-0-2px--255 color-0-$scanIdleText--255">
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-switchLabel">
+      &lt;
+    </span>
+  </div>
+</div>"
+`;
+
+exports[`UndoPanel 되돌리기 창을 렌더한다 1`] = `
+"<div class="display-0-flex--0 flex-direction-0-column--0 background-0-$undoBg--255 border-color-0-$undoText--255 border-radius-0-14px--255 border-style-0-solid--255 border-width-0-5px--255 color-0-$undoText--255 flex-0-1--255 gap-0-2px--255 justify-content-0-center--255">
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-switchLabel">
+      되돌리기
+    </span>
+  </div>
+  <div class="display-0-flex--0 justify-content-0-center--0 align-items-0-center--0">
+    <span class="typo-caption">
+      3초 안에 누르면 되돌립니다
+    </span>
+  </div>
+</div>"
+`;
