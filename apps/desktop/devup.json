@@ -86,7 +86,6 @@
     "typography": {
       "switchLabel": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 800,
           "fontSize": "28px",
@@ -95,7 +94,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 800,
           "fontSize": "34px",
@@ -104,7 +102,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 800,
           "fontSize": "40px",
@@ -114,7 +111,6 @@
       ],
       "h1": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 800,
           "fontSize": "32px",
@@ -123,7 +119,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 800,
           "fontSize": "40px",
@@ -133,7 +128,6 @@
       ],
       "h2": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 700,
           "fontSize": "26px",
@@ -142,7 +136,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 700,
           "fontSize": "32px",
@@ -152,7 +145,6 @@
       ],
       "bodyXL": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 500,
           "fontSize": "20px",
@@ -161,7 +153,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 500,
           "fontSize": "24px",
@@ -171,7 +162,6 @@
       ],
       "bodyL": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 500,
           "fontSize": "18px",
@@ -180,7 +170,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 500,
           "fontSize": "20px",
@@ -190,7 +179,6 @@
       ],
       "body": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 400,
           "fontSize": "16px",
@@ -199,7 +187,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 400,
           "fontSize": "18px",
@@ -209,7 +196,6 @@
       ],
       "caption": [
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 400,
           "fontSize": "14px",
@@ -218,7 +204,6 @@
         },
         null,
         {
-          "fontFamily": "Pretendard",
           "fontStyle": "normal",
           "fontWeight": 400,
           "fontSize": "16px",
