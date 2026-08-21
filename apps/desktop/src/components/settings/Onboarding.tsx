@@ -6,7 +6,8 @@ import { useState } from 'react'
 import { Range } from '@/components/settings/Range'
 import { Section } from '@/components/settings/Section'
 import { SwitchTester } from '@/components/settings/SwitchTester'
-import { formatSeconds, type Profile, saveProfile } from '@/lib/profile'
+import { formatSeconds } from '@/lib/format'
+import { type Profile, saveProfile } from '@/lib/profile'
 
 const STEPS = ['스위치 확인', '속도 맞추기', '저장'] as const
 
