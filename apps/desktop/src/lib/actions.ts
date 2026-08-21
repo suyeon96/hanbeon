@@ -49,3 +49,11 @@ export const DEFAULT_SCAN_INTERVAL_MS = 1800
 
 /** 선택 직후 이 시간 안에 다시 누르면 되돌리기로 판정한다. */
 export const UNDO_WINDOW_MS = 3000
+
+/**
+ * 간격이 바뀐 이유를 컨트롤러에 띄워 두는 시간.
+ *
+ * 계속 남겨 두지 않는다 — 그 줄은 평소 현재 속도를 보여주는 자리이고,
+ * 지난 조정 문구가 계속 붙어 있으면 지금 값을 확인할 수 없게 된다.
+ */
+export const INTERVAL_NOTICE_MS = 6000

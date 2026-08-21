@@ -49,5 +49,3 @@ export const saveProfile = (next: Profile) =>
   invoke<SaveResult>('save_profile', { next })
 
 export const closeSettings = () => invoke<void>('close_settings')
-
-export const formatSeconds = (ms: number) => `${(ms / 1000).toFixed(1)}초`

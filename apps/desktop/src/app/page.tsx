@@ -7,14 +7,17 @@ import { useEffect, useState } from 'react'
 
 import { DragHandle } from '@/components/DragHandle'
 import { ScanProgress } from '@/components/ScanProgress'
+import { StatusLine } from '@/components/StatusLine'
 import { type CursorState, SwitchButton } from '@/components/SwitchButton'
 import { UndoPanel } from '@/components/UndoPanel'
 import {
   DEFAULT_SCAN_INTERVAL_MS,
+  INTERVAL_NOTICE_MS,
   SCAN_ACTIONS,
   type ScanError,
   type ScanSnapshot,
 } from '@/lib/actions'
+import type { IntervalEvent } from '@/lib/profile'
 
 const INITIAL: ScanSnapshot = {
   cursor: 0,
@@ -50,8 +53,11 @@ export default function FloatingPage() {
     at: performance.now(),
   }))
   const [error, setError] = useState<ScanError | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
+    let noticeTimer: ReturnType<typeof setTimeout> | undefined
+
     const receive = (snapshot: ScanSnapshot) =>
       setTimed({ snapshot, at: performance.now() })
 
@@ -68,10 +74,22 @@ export default function FloatingPage() {
     const unlistenError = listen<ScanError>('scan://error', (event) =>
       setError(event.payload),
     )
+    // 적응 로직이 속도를 바꿨을 때만 온다. 사용자가 모르는 채로 지나가서는
+    // 안 되는 변화라서, 설정 화면이 닫혀 있어도 여기서 알린다(PRD F5).
+    const unlistenInterval = listen<IntervalEvent>(
+      'scan://interval',
+      (event) => {
+        setNotice(event.payload.reason)
+        clearTimeout(noticeTimer)
+        noticeTimer = setTimeout(() => setNotice(null), INTERVAL_NOTICE_MS)
+      },
+    )
 
     return () => {
+      clearTimeout(noticeTimer)
       unlistenState.then((stop) => stop()).catch(() => {})
       unlistenError.then((stop) => stop()).catch(() => {})
+      unlistenInterval.then((stop) => stop()).catch(() => {})
     }
   }, [])
 
@@ -120,17 +138,6 @@ export default function FloatingPage() {
         </Box>
       )}
 
-      {mode === 'paused' && (
-        <Text
-          color="$warning"
-          flexShrink={0}
-          textAlign="center"
-          typography="caption"
-        >
-          일시정지 — 길게 눌러 다시 시작
-        </Text>
-      )}
-
       {mode === 'confirm' ? (
         <UndoPanel />
       ) : (
@@ -151,6 +158,12 @@ export default function FloatingPage() {
           ))}
         </Box>
       )}
+
+      <StatusLine
+        intervalMs={snapshot.intervalMs}
+        mode={mode}
+        notice={notice}
+      />
     </VStack>
   )
 }

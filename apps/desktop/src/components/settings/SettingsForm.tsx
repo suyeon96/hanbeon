@@ -9,9 +9,9 @@ import { Range } from '@/components/settings/Range'
 import { Section } from '@/components/settings/Section'
 import { SwitchTester } from '@/components/settings/SwitchTester'
 import { Toggle } from '@/components/settings/Toggle'
+import { formatSeconds } from '@/lib/format'
 import {
   closeSettings,
-  formatSeconds,
   type IntervalEvent,
   type Profile,
   saveProfile,
