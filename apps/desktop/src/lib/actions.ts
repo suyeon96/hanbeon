@@ -27,6 +27,15 @@ export interface ScanSnapshot {
   action: ScanActionId
   mode: ScanMode
   intervalMs: number
+  /**
+   * 지금 모드가 통째로 지속되는 시간. 남은 시간 표시의 분모다.
+   *
+   * 모드마다 다르다 — 순환은 주사 간격, 머무름은 그 1.5배, 되돌리기는 3초.
+   * 주사 간격만 보고 그리면 머무름·되돌리기에서 눈금이 마감과 어긋난다.
+   */
+  phaseMs: number
+  /** 이 스냅샷을 만든 시점에 남아 있던 시간. */
+  remainingMs: number
 }
 
 /** 코어가 `scan://error`로 보내는, 사용자가 알아야 하는 문제. */

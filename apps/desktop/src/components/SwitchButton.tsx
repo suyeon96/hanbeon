@@ -31,19 +31,27 @@ export function SwitchButton({ cursor, label, name }: SwitchButtonProps) {
       borderRadius="14px"
       borderStyle={cursor === 'dwelling' ? 'dashed' : 'solid'}
       borderWidth={active ? '5px' : '2px'}
+      boxSizing="border-box"
       color={active ? '$scanCursorText' : '$scanIdleText'}
       gap="0px"
       justifyContent="center"
       minH="60px"
+      overflow="hidden"
+      px="4px"
     >
       <Center>
         <Text typography="switchLabel">{label}</Text>
       </Center>
-      {/* 머무는 중에는 '한 번 더 누르면 같은 동작'임을 알려야 한다.
-          이 상태를 모르면 사용자는 순환을 기다리며 아무것도 하지 않는다. */}
-      {cursor === 'dwelling' && (
+      {/* 설명은 커서가 있는 칸에만 단다. 네 칸 모두에 붙이면 글자가 늘어
+          정작 커서가 어디 있는지가 묻힌다.
+
+          머무는 중에는 '한 번 더 누르면 같은 동작'임을 알려야 한다. 이 상태를
+          모르면 사용자는 순환을 기다리며 아무것도 하지 않는다. */}
+      {active && (
         <Center>
-          <Text typography="caption">한 번 더</Text>
+          <Text lineHeight="1.2" typography="caption">
+            {cursor === 'dwelling' ? '한 번 더' : name}
+          </Text>
         </Center>
       )}
     </VStack>

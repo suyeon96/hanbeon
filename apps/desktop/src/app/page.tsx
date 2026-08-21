@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useEffect, useState } from 'react'
 
+import { DragHandle } from '@/components/DragHandle'
+import { ScanProgress } from '@/components/ScanProgress'
 import { type CursorState, SwitchButton } from '@/components/SwitchButton'
 import { UndoPanel } from '@/components/UndoPanel'
 import {
@@ -14,6 +16,26 @@ import {
   type ScanSnapshot,
 } from '@/lib/actions'
 
+const INITIAL: ScanSnapshot = {
+  cursor: 0,
+  action: 'next',
+  mode: 'scanning',
+  intervalMs: DEFAULT_SCAN_INTERVAL_MS,
+  phaseMs: DEFAULT_SCAN_INTERVAL_MS,
+  remainingMs: DEFAULT_SCAN_INTERVAL_MS,
+}
+
+/**
+ * 코어가 보낸 상태와, 그것이 도착한 시각.
+ *
+ * 남은 시간은 '코어가 알려준 잔여 시간'에서 '그 뒤로 흐른 시간'을 빼야 나온다.
+ * 도착 시각을 함께 들고 있지 않으면 이벤트 사이에서 눈금이 멈춘다.
+ */
+interface Timed {
+  snapshot: ScanSnapshot
+  at: number
+}
+
 /**
  * floating 컨트롤러.
  *
@@ -21,24 +43,27 @@ import {
  * 이 화면은 코어가 보낸 상태를 그리기만 한다.
  */
 export default function FloatingPage() {
-  const [snapshot, setSnapshot] = useState<ScanSnapshot>({
-    cursor: 0,
-    action: 'next',
-    mode: 'scanning',
-    intervalMs: DEFAULT_SCAN_INTERVAL_MS,
-  })
+  const [timed, setTimed] = useState<Timed>(() => ({
+    snapshot: INITIAL,
+    // 코어의 첫 응답이 오기 전까지 쓰는 임시 기준. 화면에 그려지는 값이
+    // 아니라 서버·클라이언트가 달라도 문제가 되지 않는다.
+    at: performance.now(),
+  }))
   const [error, setError] = useState<ScanError | null>(null)
 
   useEffect(() => {
+    const receive = (snapshot: ScanSnapshot) =>
+      setTimed({ snapshot, at: performance.now() })
+
     // 첫 틱이 오기 전까지 화면이 비지 않도록 현재 상태를 한 번 맞춘다.
     invoke<ScanSnapshot>('scan_snapshot')
-      .then(setSnapshot)
+      .then(receive)
       .catch(() => {
         // 브라우저에서 화면만 확인할 때는 Tauri 컨텍스트가 없다.
       })
 
     const unlistenState = listen<ScanSnapshot>('scan://state', (event) =>
-      setSnapshot(event.payload),
+      receive(event.payload),
     )
     const unlistenError = listen<ScanError>('scan://error', (event) =>
       setError(event.payload),
@@ -50,6 +75,7 @@ export default function FloatingPage() {
     }
   }, [])
 
+  const { snapshot, at } = timed
   const { cursor, mode } = snapshot
 
   const cursorStateAt = (index: number): CursorState => {
@@ -62,20 +88,31 @@ export default function FloatingPage() {
       aria-label="한번 스위치 컨트롤러"
       bg="$containerBackground"
       borderColor={mode === 'paused' ? '$warning' : '$borderBold'}
-      borderRadius="18px"
+      borderRadius="20px"
       borderStyle="solid"
       borderWidth="2px"
       boxSizing="border-box"
-      gap="6px"
+      gap="8px"
       h="100vh"
+      overflow="hidden"
       p="10px"
       w="100vw"
     >
+      <DragHandle />
+
+      <ScanProgress
+        mode={mode}
+        phaseMs={snapshot.phaseMs}
+        remainingMs={snapshot.remainingMs}
+        startedAt={at}
+      />
+
       {error && (
         <Box
           bg="$undoBg"
           borderRadius="8px"
           color="$undoText"
+          flexShrink={0}
           px="8px"
           py="4px"
         >
@@ -84,7 +121,12 @@ export default function FloatingPage() {
       )}
 
       {mode === 'paused' && (
-        <Text color="$warning" textAlign="center" typography="caption">
+        <Text
+          color="$warning"
+          flexShrink={0}
+          textAlign="center"
+          typography="caption"
+        >
           일시정지 — 길게 눌러 다시 시작
         </Text>
       )}
@@ -92,7 +134,13 @@ export default function FloatingPage() {
       {mode === 'confirm' ? (
         <UndoPanel />
       ) : (
-        <Box display="grid" flex={1} gap="8px" gridTemplateColumns="1fr 1fr">
+        <Box
+          display="grid"
+          flex={1}
+          gap="8px"
+          gridTemplateColumns="1fr 1fr"
+          minH="0"
+        >
           {SCAN_ACTIONS.map((action, index) => (
             <SwitchButton
               key={action.id}

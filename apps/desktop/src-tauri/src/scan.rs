@@ -77,6 +77,14 @@ pub struct Snapshot {
     pub action: Action,
     pub mode: Mode,
     pub interval_ms: u64,
+    /// 지금 모드가 통째로 지속되는 시간. 남은 시간 표시의 분모다.
+    ///
+    /// 모드마다 길이가 다르다 — 순환은 주사 간격, 머무름은 그 1.5배,
+    /// 되돌리기는 3초. 프론트가 주사 간격만 알면 머무름·되돌리기에서
+    /// 눈금이 실제 마감과 어긋난다.
+    pub phase_ms: u64,
+    /// 이 모드가 끝나기까지 남은 시간. 남은 시간 표시의 분자다.
+    pub remaining_ms: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -107,6 +115,8 @@ struct State {
     interval: Duration,
     /// 현재 모드가 끝나는 시각.
     deadline: Instant,
+    /// 현재 모드가 시작될 때 잡힌 길이. `deadline`과 짝으로만 움직인다.
+    phase: Duration,
     /// 커서가 지금 칸에 들어온 시각. 반응시간을 재는 기준이다.
     entered_at: Instant,
     /// 마지막 선택 이후 커서가 몇 칸 움직였는지.
@@ -125,6 +135,7 @@ impl State {
             mode: Mode::Scanning,
             interval,
             deadline: now + interval,
+            phase: interval,
             entered_at: now,
             steps: 0,
             adapter: Adapter::default(),
@@ -145,7 +156,25 @@ impl State {
             max_ms: profile.max_interval_ms,
         };
         self.adaptation_active = profile.adaptation_active();
-        self.deadline = now + self.interval;
+
+        // 지금 모드에 맞는 길이로 다시 잡는다. 머무름 중에 슬라이더를 움직였다고
+        // 순환 간격만큼만 머물게 되면, 화면의 남은 시간과 실제 마감이 어긋난다.
+        let phase = match self.mode {
+            Mode::Dwelling => self.dwell_timeout(),
+            Mode::Confirm => CONFIRM_WINDOW,
+            Mode::Scanning | Mode::Paused => self.interval,
+        };
+        self.enter(self.mode, phase, now);
+    }
+
+    /// 모드와 그 모드가 지속되는 시간을 함께 바꾼다.
+    ///
+    /// `deadline`만 옮기고 `phase`를 놓치면 남은 시간 표시가 실제 마감과
+    /// 어긋난다. 두 값을 항상 이 함수로만 움직여 어긋날 자리를 없앤다.
+    fn enter(&mut self, mode: Mode, phase: Duration, now: Instant) {
+        self.mode = mode;
+        self.phase = phase;
+        self.deadline = now + phase;
     }
 
     /// 이번 선택을 적응 로직에 넘기고, 간격이 바뀌면 그 내용을 돌려준다.
@@ -167,12 +196,16 @@ impl State {
         Some(adjustment)
     }
 
-    fn snapshot(&self) -> Snapshot {
+    fn snapshot(&self, now: Instant) -> Snapshot {
         Snapshot {
             cursor: self.cursor,
             action: Action::at(self.cursor),
             mode: self.mode,
             interval_ms: self.interval.as_millis() as u64,
+            phase_ms: self.phase.as_millis() as u64,
+            // 마감이 이미 지났어도 음수가 되지 않는다. 창을 띄운 직후처럼
+            // 틱과 스냅샷 요청이 엇갈리는 순간이 있다.
+            remaining_ms: self.deadline.saturating_duration_since(now).as_millis() as u64,
         }
     }
 
@@ -195,25 +228,23 @@ impl State {
         match self.mode {
             Mode::Scanning => {
                 self.step_cursor(now);
-                self.deadline = now + self.interval;
-                Some(self.snapshot())
+                self.enter(Mode::Scanning, self.interval, now);
+                Some(self.snapshot(now))
             }
             Mode::Dwelling => {
                 // 머무름이 끝나면 다음 칸부터 순환을 재개한다.
-                self.mode = Mode::Scanning;
                 self.step_cursor(now);
-                self.deadline = now + self.interval;
-                Some(self.snapshot())
+                self.enter(Mode::Scanning, self.interval, now);
+                Some(self.snapshot(now))
             }
             Mode::Confirm => {
                 // 되돌리기 창이 지나면 머무름으로 내려간다.
                 // 방금 Enter를 눌렀으니 한 번 더 누를 가능성이 높다.
-                self.mode = Mode::Dwelling;
-                self.deadline = now + self.dwell_timeout();
-                Some(self.snapshot())
+                self.enter(Mode::Dwelling, self.dwell_timeout(), now);
+                Some(self.snapshot(now))
             }
             Mode::Paused => {
-                self.deadline = now + self.interval;
+                self.enter(Mode::Paused, self.interval, now);
                 None
             }
         }
@@ -231,8 +262,7 @@ impl State {
 
                 // 되돌린 뒤에는 순환으로 돌아간다. 되돌리기를 머무름으로 두면
                 // 한 번 더 누를 때 또 되돌아가 사용자가 위치를 잃는다.
-                self.mode = Mode::Scanning;
-                self.deadline = now + self.interval;
+                self.enter(Mode::Scanning, self.interval, now);
                 self.steps = 0;
 
                 Outcome {
@@ -253,20 +283,17 @@ impl State {
 
                 let command = match Action::at(self.cursor) {
                     Action::Settings => {
-                        self.mode = Mode::Dwelling;
-                        self.deadline = now + self.dwell_timeout();
+                        self.enter(Mode::Dwelling, self.dwell_timeout(), now);
                         Command::OpenSettings
                     }
                     Action::Enter => {
-                        self.mode = Mode::Confirm;
-                        self.deadline = now + CONFIRM_WINDOW;
+                        self.enter(Mode::Confirm, CONFIRM_WINDOW, now);
                         Command::Emit(Action::Enter)
                     }
                     action => {
                         // 이동은 반대 방향 칸이 곧 되돌리기이므로 확인 창을 두지 않는다.
                         // 매 이동마다 3초를 기다리게 하면 연속 탐색이 불가능해진다.
-                        self.mode = Mode::Dwelling;
-                        self.deadline = now + self.dwell_timeout();
+                        self.enter(Mode::Dwelling, self.dwell_timeout(), now);
                         Command::Emit(action)
                     }
                 };
@@ -281,12 +308,12 @@ impl State {
 
     /// 길게 누름. 정지와 해제를 오간다.
     fn toggle_pause(&mut self, now: Instant) {
-        self.mode = if self.mode == Mode::Paused {
+        let next = if self.mode == Mode::Paused {
             Mode::Scanning
         } else {
             Mode::Paused
         };
-        self.deadline = now + self.interval;
+        self.enter(next, self.interval, now);
     }
 }
 
@@ -345,7 +372,8 @@ impl Scanner {
     }
 
     pub fn snapshot(&self) -> Option<Snapshot> {
-        self.state.lock().ok().map(|state| state.snapshot())
+        let now = Instant::now();
+        self.state.lock().ok().map(|state| state.snapshot(now))
     }
 
     /// 상태 확인 루프를 띄운다.
@@ -393,7 +421,7 @@ impl Scanner {
                     Outcome::default()
                 }
             };
-            (outcome, state.snapshot())
+            (outcome, state.snapshot(now))
         };
 
         if log_enabled() {
@@ -542,10 +570,75 @@ mod tests {
 
     #[test]
     fn 초기_상태는_첫_칸에서_순환_중이다() {
-        let (state, _) = state();
-        let snapshot = state.snapshot();
+        let (state, now) = state();
+        let snapshot = state.snapshot(now);
         assert_eq!(snapshot.cursor, 0);
         assert_eq!(snapshot.mode, Mode::Scanning);
+    }
+
+    // --- 남은 시간 표시 ---
+
+    #[test]
+    fn 남은_시간은_마감까지_줄어든다() {
+        let (state, now) = state();
+
+        assert_eq!(state.snapshot(now).remaining_ms, 1000);
+        assert_eq!(
+            state
+                .snapshot(now + Duration::from_millis(400))
+                .remaining_ms,
+            600
+        );
+    }
+
+    #[test]
+    fn 마감이_지나도_남은_시간은_음수가_되지_않는다() {
+        let (state, now) = state();
+        assert_eq!(
+            state
+                .snapshot(now + Duration::from_millis(1500))
+                .remaining_ms,
+            0
+        );
+    }
+
+    #[test]
+    fn 모드마다_표시_길이가_다르다() {
+        let (mut state, now) = state();
+
+        // 순환은 주사 간격 그대로.
+        assert_eq!(state.snapshot(now).phase_ms, 1000);
+
+        // 머무름은 주사 간격의 1.5배.
+        state.select(now);
+        assert_eq!(state.mode, Mode::Dwelling);
+        assert_eq!(state.snapshot(now).phase_ms, 1500);
+
+        // 되돌리기 창은 주사 간격과 무관하게 3초.
+        let now = move_to(&mut state, Action::Enter, now);
+        state.select(now);
+        assert_eq!(state.mode, Mode::Confirm);
+        assert_eq!(state.snapshot(now).phase_ms, 3000);
+    }
+
+    #[test]
+    fn 설정이_바뀌면_표시_길이도_지금_모드에_맞춰_따라온다() {
+        let (mut state, now) = state();
+
+        state.select(now);
+        assert_eq!(state.mode, Mode::Dwelling);
+
+        let profile = Profile {
+            interval_ms: 2000,
+            min_interval_ms: 800,
+            max_interval_ms: 4000,
+            ..Default::default()
+        };
+        state.apply_profile(&profile, now);
+
+        // 머무름 중이었으므로 새 간격의 1.5배로 다시 잡혀야 한다.
+        assert_eq!(state.snapshot(now).phase_ms, 3000);
+        assert_eq!(state.deadline, now + Duration::from_millis(3000));
     }
 
     #[test]

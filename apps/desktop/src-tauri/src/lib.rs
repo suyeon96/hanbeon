@@ -119,10 +119,6 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            if let Some(floating) = app.get_webview_window("floating") {
-                window::prepare_floating(&floating)?;
-            }
-
             tray::setup(app)?;
 
             let mut profile = Profile::load(app.handle());
@@ -131,6 +127,12 @@ pub fn run() {
                 profile.interval_ms = interval_ms;
                 profile.max_interval_ms = profile.max_interval_ms.max(interval_ms);
                 profile.sanitize();
+            }
+
+            // 창 배치는 프로필을 읽은 다음이어야 한다. 사용자가 옮겨 둔 위치를
+            // 모른 채 먼저 띄우면 기본 위치에서 한 번 튄 뒤에 제자리를 찾는다.
+            if let Some(floating) = app.get_webview_window("floating") {
+                window::prepare_floating(&floating, profile.window_position)?;
             }
 
             if std::env::var("HANBEON_LOG").is_ok() {
@@ -157,11 +159,14 @@ pub fn run() {
 
             let profile = Arc::new(Mutex::new(profile));
             let scanner = Scanner::new(Arc::clone(&profile), audio);
+            let moves = window::MoveWatch::default();
 
             app.manage(SharedProfile(Arc::clone(&profile)));
             app.manage(Arc::clone(&detector));
             app.manage(scanner.clone());
+            app.manage(moves.clone());
 
+            moves.watch(app.handle().clone(), Arc::clone(&profile));
             scanner.start(app.handle().clone());
             input::register(app.handle(), detector, switch_code, move |app, gesture| {
                 scanner.handle(app, gesture);
@@ -178,6 +183,15 @@ pub fn run() {
             {
                 api.prevent_close();
                 let _ = window::hide_settings(window.app_handle());
+            }
+
+            // 사용자가 끌어 옮긴 위치를 기억한다. 저장과 활성 상태 복구는
+            // 이동이 멎은 뒤에 한 번만 일어난다(`MoveWatch`).
+            if let tauri::WindowEvent::Moved(position) = event
+                && window.label() == "floating"
+                && let Some(moves) = window.app_handle().try_state::<window::MoveWatch>()
+            {
+                moves.note((position.x, position.y));
             }
         })
         .invoke_handler(tauri::generate_handler![

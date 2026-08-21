@@ -102,6 +102,13 @@ Next.js는 `output: 'export'`다. 서버 컴포넌트의 데이터 패칭, 라�
 - macOS: `NSPanel` + `NonactivatingPanel` 스타일 마스크, activation policy `Accessory`
 - Windows: `WS_EX_NOACTIVATE`
 
+**둘 다 아직 목표 상태다.** 지금 macOS는 `Accessory` 정책만 걸려 있고 NSPanel
+승격은 하지 않았으며, Windows의 `WS_EX_NOACTIVATE`는 TODO로 남아 있다
+(`window::make_non_activating`). 그래서 **창을 클릭하는 순간 우리 앱이 활성 앱이
+된다.** 드래그로 창을 옮길 수 있게 되면서 이 경로가 실제로 열렸고, 이동이 멎으면
+`window::release_activation`이 활성 상태를 직전 앱에 돌려주는 것으로 막고 있다.
+창을 클릭하게 만드는 UI를 추가할 때는 이 복귀 경로를 함께 태운다.
+
 창을 보이거나 옮기거나 크기를 바꾸는 코드를 추가할 때마다 **실제로 다른 앱
 (브라우저·문서 편집기)에 포커스를 둔 채로** 동작을 확인한다. 개발 중 프론트만 보고
 넘어가면 반드시 놓친다.
