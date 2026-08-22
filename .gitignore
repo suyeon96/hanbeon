@@ -1,8 +1,9 @@
 node_modules
 .idea
 .vscode
-.env.local
-.env*local
+.env
+.env.*
+!.env.example
 schema.d.ts
 !apps/*/schema.d.ts
 
