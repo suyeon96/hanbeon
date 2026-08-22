@@ -11,6 +11,7 @@ import { StatusLine } from '@/components/StatusLine'
 import { type CursorState, SwitchButton } from '@/components/SwitchButton'
 import { UndoPanel } from '@/components/UndoPanel'
 import {
+  type CoverEvent,
   DEFAULT_SCAN_INTERVAL_MS,
   INTERVAL_NOTICE_MS,
   SCAN_ACTIONS,
@@ -54,6 +55,10 @@ export default function FloatingPage() {
   }))
   const [error, setError] = useState<ScanError | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [cover, setCover] = useState<CoverEvent>({
+    covered: false,
+    percent: 100,
+  })
 
   useEffect(() => {
     let noticeTimer: ReturnType<typeof setTimeout> | undefined
@@ -85,16 +90,26 @@ export default function FloatingPage() {
       },
     )
 
+    // 조작할 요소를 우리가 가리고 있는지. 코어가 상태가 바뀔 때만 보낸다.
+    const unlistenCover = listen<CoverEvent>('window://cover', (event) =>
+      setCover(event.payload),
+    )
+
     return () => {
       clearTimeout(noticeTimer)
       unlistenState.then((stop) => stop()).catch(() => {})
       unlistenError.then((stop) => stop()).catch(() => {})
       unlistenInterval.then((stop) => stop()).catch(() => {})
+      unlistenCover.then((stop) => stop()).catch(() => {})
     }
   }, [])
 
   const { snapshot, at } = timed
   const { cursor, mode } = snapshot
+
+  // 되돌리기 창에서는 흐리게 하지 않는다. 3초 안에 눌러야 하는 안전 장치인데,
+  // 그 순간 화면이 흐려지면 되돌릴 기회를 놓친다. 가려진 것보다 이쪽이 무겁다.
+  const dimmed = cover.covered && mode !== 'confirm'
 
   const cursorStateAt = (index: number): CursorState => {
     if (mode === 'paused' || index !== cursor) return 'idle'
@@ -112,6 +127,7 @@ export default function FloatingPage() {
       boxSizing="border-box"
       gap="8px"
       h="100vh"
+      opacity={dimmed ? cover.percent / 100 : 1}
       overflow="hidden"
       p="10px"
       w="100vw"

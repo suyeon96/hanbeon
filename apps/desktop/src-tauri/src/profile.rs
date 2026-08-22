@@ -23,8 +23,12 @@ pub enum UndoMapping {
     Undo,
 }
 
+/// `serde(default)`가 필드 단위로 걸려 있다. 설정 항목이 늘어나면 이전 버전이
+/// 남긴 파일에는 그 필드가 없는데, 그걸 파싱 실패로 처리하면 사용자가 맞춰 둔
+/// 속도·스위치 키가 통째로 기본값으로 되돌아간다. 없는 항목만 기본값을 쓰고
+/// 나머지는 지킨다.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct Profile {
     /// 현재 주사 간격.
     pub interval_ms: u64,
@@ -47,6 +51,10 @@ pub struct Profile {
     pub theme: String,
     /// 사용자가 옮긴 floating 창 위치.
     pub window_position: Option<(i32, i32)>,
+    /// 조작할 요소를 컨트롤러가 가릴 때 창을 반투명하게 만들지.
+    pub dim_when_covered: bool,
+    /// 가릴 때의 불투명도(퍼센트, 25~100). 낮을수록 뒤가 잘 보이고 컨트롤러는 흐려진다.
+    pub dim_percent: u8,
     /// 초기 설정 3단계를 마쳤는지. 아니면 첫 실행 안내를 띄운다.
     pub onboarded: bool,
 }
@@ -65,6 +73,10 @@ impl Default for Profile {
             undo_mapping: UndoMapping::Back,
             theme: "light".to_string(),
             window_position: None,
+            dim_when_covered: true,
+            // 뒤를 알아볼 수 있으면서 컨트롤러 글자도 남는 지점. 저시력
+            // 사용자에게 더 낮은 값은 화면을 잃는 것과 같아서 기본으로 두지 않는다.
+            dim_percent: 40,
             onboarded: false,
         }
     }
@@ -82,6 +94,10 @@ impl Profile {
             .interval_ms
             .clamp(self.min_interval_ms, self.max_interval_ms);
         self.long_press_ms = self.long_press_ms.clamp(300, 1500);
+
+        // 0에 가까운 값이 들어오면 컨트롤러가 통째로 사라진다. 스위치만 쓰는
+        // 사용자는 보이지 않는 컨트롤러를 되돌릴 방법이 없다.
+        self.dim_percent = self.dim_percent.clamp(25, 100);
 
         if self.switch_key.trim().is_empty() {
             self.switch_key = "F13".to_string();
@@ -174,6 +190,47 @@ mod tests {
         };
         profile.sanitize();
         assert!(profile.interval_ms >= 300);
+    }
+
+    #[test]
+    fn 컨트롤러가_사라질_만큼_투명해지지_않는다() {
+        let mut profile = Profile {
+            dim_percent: 0,
+            ..Default::default()
+        };
+        profile.sanitize();
+        assert!(profile.dim_percent >= 25);
+    }
+
+    #[test]
+    fn 옛_버전_파일에_없는_항목만_기본값을_쓴다() {
+        // 설정 항목이 늘기 전에 저장된 파일. 없는 항목 때문에 파싱이 통째로
+        // 실패하면 사용자가 맞춰 둔 속도와 스위치 키가 함께 날아간다.
+        let old = r#"{
+            "intervalMs": 2200,
+            "minIntervalMs": 900,
+            "maxIntervalMs": 3800,
+            "adaptive": false,
+            "manualLock": true,
+            "longPressMs": 700,
+            "switchKey": "F14",
+            "sound": false,
+            "undoMapping": "undo",
+            "theme": "contrast",
+            "windowPosition": [100, 200],
+            "onboarded": true
+        }"#;
+
+        let profile: Profile = serde_json::from_str(old).expect("옛 파일을 읽어야 한다");
+
+        assert_eq!(profile.interval_ms, 2200);
+        assert_eq!(profile.switch_key, "F14");
+        assert_eq!(profile.theme, "contrast");
+        assert!(profile.manual_lock);
+
+        // 새로 생긴 항목만 기본값.
+        assert!(profile.dim_when_covered);
+        assert_eq!(profile.dim_percent, 40);
     }
 
     #[test]

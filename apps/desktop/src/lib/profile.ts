@@ -16,6 +16,8 @@ export interface Profile {
   undoMapping: UndoMapping
   theme: Theme
   windowPosition: [number, number] | null
+  dimWhenCovered: boolean
+  dimPercent: number
   onboarded: boolean
 }
 

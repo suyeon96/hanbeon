@@ -168,6 +168,31 @@ export function SettingsForm({ initial }: { initial: Profile }) {
       </Section>
 
       <Section
+        description="컨트롤러는 항상 맨 앞에 뜹니다. 지금 조작할 요소가 그 아래에 들어가면 창을 잠시 반투명하게 만들어 뒤가 보이게 합니다."
+        title="가릴 때 반투명"
+      >
+        <Toggle
+          checked={draft.dimWhenCovered}
+          offLabel="반투명 꺼짐 — 항상 또렷하게"
+          onChange={(dimWhenCovered) => update({ dimWhenCovered })}
+          onLabel="반투명 켜짐"
+        />
+        <Range
+          label="반투명 정도"
+          max={100}
+          min={25}
+          onChange={(dimPercent) => update({ dimPercent })}
+          step={5}
+          value={draft.dimPercent}
+          valueText={`${draft.dimPercent}%`}
+        />
+        <Text color="$caption" typography="body">
+          숫자가 낮을수록 뒤가 잘 보이고 컨트롤러는 흐려집니다. 글자가 읽히지
+          않으면 값을 올리세요. 되돌리기 창에서는 흐려지지 않습니다.
+        </Text>
+      </Section>
+
+      <Section
         description="이보다 오래 누르면 '길게 누름'으로 읽어 취소하거나 일시정지합니다. 피로가 쌓여 누르는 시간이 길어지면 이 값을 올리세요."
         title="길게 누르기"
       >
@@ -246,6 +271,8 @@ export function SettingsForm({ initial }: { initial: Profile }) {
             longPressMs: 600,
             sound: true,
             undoMapping: 'back',
+            dimWhenCovered: true,
+            dimPercent: 40,
           })
         }
         px="24px"

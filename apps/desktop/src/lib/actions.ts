@@ -38,6 +38,19 @@ export interface ScanSnapshot {
   remainingMs: number
 }
 
+/**
+ * 코어가 `window://cover`로 보내는 가려짐 상태.
+ *
+ * 지금 조작해야 할 요소가 컨트롤러 아래에 들어갔는지 알려준다. 가려진 채로
+ * 두면 사용자는 자기가 무엇을 고르고 있는지 볼 수 없는데, 커서는 정상적으로
+ * 돌고 있어서 화면만 봐서는 무엇이 잘못됐는지도 알 수 없다.
+ */
+export interface CoverEvent {
+  covered: boolean
+  /** 가릴 때 쓸 불투명도(퍼센트). 설정에서 조절한다. */
+  percent: number
+}
+
 /** 코어가 `scan://error`로 보내는, 사용자가 알아야 하는 문제. */
 export interface ScanError {
   message: string
