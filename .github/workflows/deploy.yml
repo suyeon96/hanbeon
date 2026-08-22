@@ -14,11 +14,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
+  # 공개 저장소이므로 PR 검사는 반드시 GitHub 호스팅 러너에서 돈다.
+  # self-hosted 러너에서 PR 코드를 실행하면 (postinstall, 테스트, docker build)
+  # 누구든 PR 하나로 우리 인프라에서 임의 코드를 돌릴 수 있다.
   check:
-    runs-on:
-      group: default
-      labels: linux
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres
@@ -67,8 +71,6 @@ jobs:
 
       - name: Build
         run: bun run build
-      - uses: atos-actions/clean-self-hosted-runner@v1
-        if: ${{ always() }}
 
   changepacks:
     name: changepacks
@@ -84,31 +86,40 @@ jobs:
       - check
     steps:
       - uses: actions/checkout@v6
-      - uses: changepacks/action@main
+      - uses: changepacks/action@ff3d7d0ddbce5dd21c4db0fc5932493b320cf85e # main
         id: changepacks
-      - uses: atos-actions/clean-self-hosted-runner@v1
-        if: ${{ always() }}
     outputs:
       changepacks: ${{ steps.changepacks.outputs.changepacks }}
 
   deploy:
     name: deploy
     needs: [check, changepacks]
-    if: (needs.changepacks.result == 'success' && contains(needs.changepacks.outputs.changepacks, 'package.json')) || github.ref_name == 'dev' || github.ref_name == 'main' || github.event_name == 'workflow_dispatch'
+    # PR에서는 절대 돌지 않는다. 이 작업은 self-hosted 러너에서 시크릿을 들고
+    # 실행되므로, 포크 PR이 여기까지 닿으면 배포 자격증명이 그대로 노출된다.
+    if: >-
+      github.event_name != 'pull_request'
+      && (
+        (needs.changepacks.result == 'success' && contains(needs.changepacks.outputs.changepacks, 'package.json'))
+        || github.ref_name == 'dev'
+        || github.ref_name == 'main'
+        || github.event_name == 'workflow_dispatch'
+      )
     runs-on: self-hosted
     environment: ${{ (contains(needs.changepacks.outputs.changepacks, 'package.json') || github.event_name == 'workflow_dispatch') && 'PROD' || 'DEV' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Collect API environment variables
-        uses: dev-five-git/collect-env-action@main
+        # 시크릿 전체를 넘기므로 반드시 커밋 SHA로 고정한다.
+        # @main으로 두면 액션 저장소가 바뀌는 순간 시크릿이 그대로 따라간다.
+        uses: dev-five-git/collect-env-action@88bb2ed8df3cf38c6890811e08932bcc3ac23c24 # main
         with:
           prefix: 'API_ENV_'
           output: 'apis/api/.env'
           remove-prefix: true
           secrets: ${{ toJson(secrets) }}
       - name: Overwrite .env
-        uses: dev-five-git/overwrite-env-file-action@main
+        uses: dev-five-git/overwrite-env-file-action@41b32db49191d9ff6a7f9de6fc651e53426d7ea5 # main
         if: ${{ !(contains(needs.changepacks.outputs.changepacks, 'package.json') || github.event_name == 'workflow_dispatch') }}
       - name: Compress
         run: |
@@ -126,7 +137,7 @@ jobs:
           path: deploy.tar.gz
           retention-days: 1
       - name: Set up Homebrew
-        uses: Homebrew/actions/setup-homebrew@main
+        uses: Homebrew/actions/setup-homebrew@a657b8b0cd35d0f65cce41fce9b24cf054b49869 # master
         if: runner.os == 'macOS'
       - name: Install sshpass (macOS only)
         if: runner.os == 'macOS'

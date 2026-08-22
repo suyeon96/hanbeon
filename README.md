@@ -103,3 +103,26 @@ bun run test           # bun test + cargo tarpaulin
 ## 배포
 
 기본적으로 docker compose로 작동되게 설계됨 (웹·API 한정). 데스크톱 앱은 `bun run desktop:build`로 플랫폼별 번들을 생성합니다.
+
+`.github/workflows/deploy.yml`의 배포 작업은 self-hosted 러너에서 배포 자격증명을 들고 실행되므로 **pull request에서는 절대 돌지 않습니다.** 검사(lint·test·build)만 GitHub 호스팅 러너에서 돕니다. 포크에서 이 워크플로를 그대로 쓰려면 배포 작업을 지우거나 자신의 러너·시크릿으로 바꿔야 합니다.
+
+## 기여
+
+이슈와 PR을 환영합니다. 다만 아래 두 가지는 코드 리뷰 이전의 전제입니다.
+
+- **접근성 원칙이 기능보다 우선합니다.** [`CLAUDE.md`](CLAUDE.md)의 '접근성 원칙' 7개 항목은 협상 대상이 아닙니다. 이 소프트웨어의 사용자는 실수 한 번의 비용이 매우 큽니다.
+- **스캔 대상 4칸 구조**는 제품의 핵심 가설입니다. 이 구조를 바꾸는 변경은 [`docs/PRD.md`](docs/PRD.md) 개정을 먼저 합의한 뒤에 진행합니다.
+
+`bun run lint`와 `bun run test`가 통과해야 하며, lint는 husky pre-commit에서 자동으로 돕니다.
+
+floating 창·키 주입과 관련된 변경은 **실제로 다른 앱에 포커스를 둔 채로** 검증한 결과를 PR에 적어주세요. 프론트만 보고 판단하면 반드시 놓칩니다.
+
+## 보안 신고
+
+이 앱은 전역 키 입력을 수신하고 다른 앱에 키를 주입하며, macOS 손쉬운 사용 권한을 사용합니다. 취약점을 발견하면 공개 이슈 대신 GitHub Security Advisory(`Security → Report a vulnerability`)로 알려주세요.
+
+## 라이선스
+
+[MIT](LICENSE).
+
+번들로 포함한 제3자 자산(Pretendard 폰트, SIL Open Font License 1.1)은 [`NOTICE.md`](NOTICE.md)에 정리했습니다.

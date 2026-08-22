@@ -3,7 +3,6 @@ import { Flex, Text, VStack } from '@devup-ui/react'
 import { MENU_ITEMS } from '../../menu_items'
 import { LogoutButton } from '../Buttons/LogoutButton'
 import { ThemeButton } from '../Buttons/ThemeButton'
-import { HeaderButtonContainer } from '../Layout/HeaderButtonContainer'
 import { MenuItem } from './MenuItem'
 import { MenuItemWithChildren } from './MenuItemWithChildren'
 
@@ -51,9 +50,6 @@ export function MobileMenu({
       ))}
 
       <VStack gap={3} pb={10} pt={4} px={4}>
-        <Flex alignItems="center" flexWrap="wrap" gap={2}>
-          <HeaderButtonContainer />
-        </Flex>
         <Flex alignItems="center" gap={2} justifyContent="space-between">
           <ThemeButton />
           <LogoutButton />
