@@ -1,5 +1,4 @@
-import { css, Text } from '@devup-ui/react'
-import Link from 'next/link'
+import { Text } from '@devup-ui/react'
 
 export function Footer() {
   return (
@@ -10,19 +9,8 @@ export function Footer() {
       typography="caption"
       wordBreak="keep-all"
     >
-      © 2025 클라이언트명. All Rights Reserved. Designed & Developed by{' '}
-      <Link
-        className={css({
-          color: '$caption',
-          textDecoration: 'none',
-          textUnderlineOffset: '4px',
-          _hover: { color: '$caption', textDecoration: 'underline' },
-        })}
-        href="https://devfive.kr"
-        target="_blank"
-      >
-        Devfive
-      </Link>
+      한번(HanBeon) 실증 대시보드 · MIT License · 제7회 국립재활원 보조기기
+      해커톤
     </Text>
   )
 }

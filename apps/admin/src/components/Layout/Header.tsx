@@ -1,9 +1,8 @@
-import { Flex } from '@devup-ui/react'
+import { Flex, Text } from '@devup-ui/react'
 import Link from 'next/link'
 
 import { LogoutButton } from '../Buttons/LogoutButton'
 import { ThemeButton } from '../Buttons/ThemeButton'
-import { HeaderButtonContainer } from './HeaderButtonContainer'
 import { HeaderMobileContainer } from './HeaderMobileContainer'
 
 export function Header() {
@@ -23,18 +22,9 @@ export function Header() {
       zIndex={100}
     >
       <Link href="/dashboard">
-        로고
-        {/* <Image
-          _themeDark={{ display: 'none' }}
-          maxW="200px"
-          src="/images/logo.png"
-        />
-        <Image
-          _themeDark={{ display: 'block' }}
-          display="none"
-          maxW="200px"
-          src="/images/white_logo.png"
-        /> */}
+        <Text color="$title" typography="h6">
+          한번 실증
+        </Text>
       </Link>
       <Flex
         alignItems="center"
@@ -45,7 +35,6 @@ export function Header() {
         justifyContent="flex-end"
       >
         <ThemeButton />
-        <HeaderButtonContainer />
         <LogoutButton />
       </Flex>
 
