@@ -19,6 +19,7 @@ export interface Profile {
   dimWhenCovered: boolean
   dimPercent: number
   appButtons: boolean
+  logging: boolean
   onboarded: boolean
 }
 
@@ -52,3 +53,6 @@ export const saveProfile = (next: Profile) =>
   invoke<SaveResult>('save_profile', { next })
 
 export const closeSettings = () => invoke<void>('close_settings')
+
+/** 실증 기록이 쌓이는 폴더. 사용자가 직접 열어 지우거나 건넬 수 있어야 한다. */
+export const getLogDirectory = () => invoke<string>('log_directory')

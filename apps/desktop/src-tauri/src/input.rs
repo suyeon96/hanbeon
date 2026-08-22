@@ -138,7 +138,7 @@ pub fn register<F>(
     on_gesture: F,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
-    F: Fn(&AppHandle, Gesture) + Send + Sync + 'static,
+    F: Fn(&AppHandle, Judgement) + Send + Sync + 'static,
 {
     println!("스위치 키: {code:?}");
 
@@ -169,7 +169,7 @@ where
                                     held_ms: judgement.held.as_millis() as u64,
                                 },
                             );
-                            on_gesture(app, judgement.gesture);
+                            on_gesture(app, judgement);
                         }
                     }
                 }

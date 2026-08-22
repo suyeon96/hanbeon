@@ -12,6 +12,7 @@ import { Toggle } from '@/components/settings/Toggle'
 import { formatSeconds } from '@/lib/format'
 import {
   closeSettings,
+  getLogDirectory,
   type IntervalEvent,
   type Profile,
   saveProfile,
@@ -31,6 +32,15 @@ export function SettingsForm({ initial }: { initial: Profile }) {
   const [draft, setDraft] = useState<Profile>(initial)
   const [warning, setWarning] = useState<string | null>(null)
   const [adjustment, setAdjustment] = useState<IntervalEvent | null>(null)
+  const [logPath, setLogPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    getLogDirectory()
+      .then(setLogPath)
+      .catch(() => {
+        // 브라우저에서 화면만 확인할 때는 Tauri 컨텍스트가 없다.
+      })
+  }, [])
 
   // 드래그 중 매 프레임 저장하지 않도록 잠깐 모았다가 쓴다.
   useEffect(() => {
@@ -168,6 +178,27 @@ export function SettingsForm({ initial }: { initial: Profile }) {
       </Section>
 
       <Section
+        description="무엇을 언제 눌렀는지를 이 기기 안에 기록합니다. 실증에서 성공률과 되돌리기를 세는 데 씁니다."
+        title="실증 기록"
+      >
+        <Toggle
+          checked={draft.logging}
+          offLabel="기록 꺼짐"
+          onChange={(logging) => update({ logging })}
+          onLabel="기록 켜짐"
+        />
+        <Text color="$caption" typography="body">
+          기록은 <b>이 기기 밖으로 나가지 않습니다.</b> 켜고 끈 것은 다음
+          실행부터 적용됩니다.
+        </Text>
+        {logPath && (
+          <Text color="$caption" typography="caption">
+            저장 위치: {logPath}
+          </Text>
+        )}
+      </Section>
+
+      <Section
         description="PDF 뷰어나 음악 앱을 쓰는 동안, 그 앱에서만 필요한 버튼을 뒤에 더 붙입니다. 앞의 네 칸은 어떤 앱에서도 자리가 바뀌지 않습니다."
         title="앱별 버튼"
       >
@@ -291,6 +322,7 @@ export function SettingsForm({ initial }: { initial: Profile }) {
             dimWhenCovered: true,
             dimPercent: 40,
             appButtons: true,
+            logging: true,
           })
         }
         px="24px"
