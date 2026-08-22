@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test'
 
-import { parseLog, splitSessions, summarize } from '@/lib/metrics'
+import {
+  histogram,
+  intervalTrack,
+  parseLog,
+  splitSessions,
+  summarize,
+} from '@/lib/metrics'
 
 /** 기록 한 줄을 만든다. 시각은 밀리초만 맞으면 된다. */
 const line = (ms: number, event: string, rest: object = {}) =>
@@ -185,5 +191,57 @@ describe('summarize', () => {
     expect(changes).toHaveLength(1)
     expect(changes[0].toMs).toBe(2200)
     expect(changes[0].reason).toContain('실수가 감지되어')
+  })
+})
+
+describe('histogram', () => {
+  it('구간마다 값을 센다', () => {
+    const bins = histogram([100, 900, 1200, 1800], 1000, 3)
+    expect(bins.map((bin) => bin.count)).toEqual([2, 2, 0])
+  })
+
+  it('마지막 구간은 열어 둔다', () => {
+    // 반응시간은 위쪽으로 길게 늘어진다. 상한에서 잘라 버리면 정작 봐야 할
+    // 꼬리가 통째로 사라진다.
+    const bins = histogram([100, 99_000], 1000, 3)
+    expect(bins.at(-1)).toMatchObject({ toMs: null, count: 1 })
+  })
+
+  it('표본이 없으면 빈 배열이다', () => {
+    expect(histogram([], 1000)).toEqual([])
+  })
+})
+
+describe('intervalTrack', () => {
+  const session = (...lines: string[]) =>
+    splitSessions(
+      parseLog(log(line(0, 'session', { phase: 'start' }), ...lines)),
+    )[0]
+
+  it('첫 간격에서 시작해 조정마다 점을 찍는다', () => {
+    const points = intervalTrack(
+      session(
+        line(100, 'cursor', { intervalMs: 1800 }),
+        line(500, 'interval', { fromMs: 1800, toMs: 2200, reason: '실수' }),
+        line(900, 'cursor', { intervalMs: 2200 }),
+      ),
+    )
+
+    expect(points.map((p) => p.intervalMs)).toEqual([1800, 2200, 2200])
+    expect(points[1].reason).toBe('실수')
+  })
+
+  it('마지막 값이 세션 끝까지 이어진 것으로 본다', () => {
+    // 끝점이 없으면 마지막 구간이 그려지지 않아, 조정 직후에 세션이 끝난
+    // 것처럼 보인다.
+    const points = intervalTrack(
+      session(line(100, 'cursor', { intervalMs: 1800 }), line(5000, 'input')),
+    )
+
+    expect(points.at(-1)).toMatchObject({ atMs: 5000, intervalMs: 1800 })
+  })
+
+  it('커서 기록이 없으면 그릴 것이 없다', () => {
+    expect(intervalTrack(session(line(10, 'input')))).toEqual([])
   })
 })

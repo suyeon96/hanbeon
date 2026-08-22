@@ -269,3 +269,79 @@ function presetSpans(lines: LogLine[]): Summary['presets'] {
 
   return spans
 }
+
+/** 분포를 막대로 그릴 수 있게 구간별로 센다. */
+export interface Bin {
+  /** 구간의 시작(밀리초). */
+  fromMs: number
+  /** 구간의 끝. 마지막 구간은 열려 있어 `null`이다. */
+  toMs: number | null
+  count: number
+}
+
+/**
+ * 값을 고정 폭 구간으로 센다.
+ *
+ * 마지막 구간은 열어 둔다. 반응시간은 위쪽으로 길게 늘어지는데, 상한을 두고
+ * 자르면 '아주 오래 걸린 경우'가 통째로 사라져 정작 봐야 할 꼬리를 잃는다.
+ */
+export function histogram(values: number[], binMs: number, bins = 8): Bin[] {
+  if (values.length === 0 || binMs <= 0 || bins <= 0) return []
+
+  const result: Bin[] = Array.from({ length: bins }, (_, index) => ({
+    fromMs: index * binMs,
+    toMs: index === bins - 1 ? null : (index + 1) * binMs,
+    count: 0,
+  }))
+
+  for (const value of values) {
+    const index = Math.min(bins - 1, Math.max(0, Math.floor(value / binMs)))
+    result[index].count += 1
+  }
+
+  return result
+}
+
+/** 세션 안에서 주사 간격이 어떻게 움직였는지, 시작부터의 경과 시간과 함께. */
+export interface IntervalPoint {
+  /** 세션 시작부터의 경과(밀리초). */
+  atMs: number
+  intervalMs: number
+  reason: string | null
+}
+
+export function intervalTrack(session: Session): IntervalPoint[] {
+  const start = session.lines[0]?.ms ?? 0
+  const first = session.lines.find((line) => line.event === 'cursor')
+  if (!first) return []
+
+  const points: IntervalPoint[] = [
+    {
+      atMs: first.ms - start,
+      intervalMs: Number(first.intervalMs),
+      reason: null,
+    },
+  ]
+
+  for (const line of session.lines) {
+    if (line.event !== 'interval') continue
+    points.push({
+      atMs: line.ms - start,
+      intervalMs: Number(line.toMs),
+      reason: String(line.reason ?? ''),
+    })
+  }
+
+  // 마지막 값이 세션 끝까지 이어졌음을 보이려면 끝점이 하나 더 필요하다.
+  const last = session.lines.at(-1)
+  const tail = points.at(-1)
+  if (last && tail && last.ms - start > tail.atMs) {
+    points.push({
+      atMs: last.ms - start,
+      intervalMs: tail.intervalMs,
+      reason: null,
+    })
+  }
+
+  return points
+}
