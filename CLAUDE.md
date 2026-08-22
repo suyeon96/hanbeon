@@ -69,6 +69,9 @@ bun run desktop:build   # 플랫폼 번들
 bun run api             # 프로필 동기화 API
 bun run dev             # front / admin 웹
 
+bun run summary         # 실증 기록을 지표로 접어 출력 (기본: OS 로그 폴더)
+bun run summary <파일|폴더> [--json]
+
 bun run lint            # oxlint + cargo clippy + cargo fmt --check
 bun run lint:fix
 bun run test            # bun test + cargo tarpaulin
@@ -213,6 +216,9 @@ API로 읽는다. 두 가지를 모르면 시간을 크게 버린다.
 - **기록은 이 기기 밖으로 나가지 않는다.** 코어에 전송 코드를 두지 않는다.
 - 사건에 코어의 타입을 그대로 넣지 않는다. 타입이 바뀌면 지난 기록을 읽을 수
   없게 된다 — 문자열·숫자로만 적는다.
+- 지표 계산은 `apps/admin/src/lib/metrics.ts` **한 곳**에 둔다. CLI(`bun run
+  summary`)와 대시보드가 같은 함수를 쓴다 — 계산이 두 벌이 되면 화면의 숫자와
+  보고서의 숫자가 갈린다.
 
 ### 사용자 프로필
 

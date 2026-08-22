@@ -149,6 +149,8 @@ struct Outcome {
     reaction_ms: u64,
     /// 지난 선택 이후 커서가 지나온 자리 수.
     steps: u32,
+    /// 그때 순환에 있던 자리 수.
+    cycle: usize,
     /// 누른 칸의 이름.
     cell: String,
 }
@@ -354,6 +356,7 @@ impl State {
     fn select(&mut self, now: Instant) -> Outcome {
         let reaction_ms = now.duration_since(self.entered_at).as_millis() as u64;
         let steps = self.steps;
+        let cycle = self.order.len();
         let cell = self.cells[self.cursor()].label.clone();
 
         match self.mode {
@@ -374,6 +377,7 @@ impl State {
                     adjustment,
                     reaction_ms,
                     steps,
+                    cycle,
                     cell,
                 }
             }
@@ -412,6 +416,7 @@ impl State {
                     adjustment,
                     reaction_ms,
                     steps,
+                    cycle,
                     cell,
                 }
             }
@@ -672,6 +677,7 @@ impl Scanner {
                     action: name,
                     reaction_ms: outcome.reaction_ms,
                     steps: outcome.steps,
+                    cycle: outcome.cycle,
                     ok: failure.is_none(),
                     error: failure,
                 }
