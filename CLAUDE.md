@@ -141,6 +141,20 @@ macOS는 앱 전체에 `ActivationPolicy::Accessory`를 걸어 floating 창이 �
 `prevent_close` 후 `hide_settings`를 태운다. **이 경로를 우회해 창을 닫으면
 정책이 Regular로 남아 floating 컨트롤러가 포커스를 뺏기 시작한다.**
 
+### 대상 앱의 포커스 요소 읽기 (macOS)
+
+가림 판정(`occlusion.rs`)은 '지금 포커스를 가진 요소'의 화면 좌표를 접근성
+API로 읽는다. 두 가지를 모르면 시간을 크게 버린다.
+
+- **시스템 전역 요소는 막혀 있다.** `AXUIElementCreateSystemWide`로 묻는 길은
+  최근 macOS에서 권한이 있어도 `kAXErrorCannotComplete`를 돌려준다. 활성 앱의
+  **pid로 직접** `AXUIElement`를 만들어야 값이 나온다.
+- **활성 앱이 우리 자신이면 건너뛴다.** 설정 창을 열면 포커스 요소로 우리
+  웹뷰가 잡히고, 그러면 창이 자기 자신을 가린다고 판정해 영영 흐려진다.
+
+좌표는 논리 px(주 화면 좌상단 원점)로 오고, 창 좌표는 물리 px로 온다.
+배율로 나눠 맞춘 뒤에 비교한다.
+
 ### macOS 접근성 권한
 
 키 주입에는 손쉬운 사용 권한이 필요하다. 개발 모드에서는 앱이 아니라 **터미널/IDE**에

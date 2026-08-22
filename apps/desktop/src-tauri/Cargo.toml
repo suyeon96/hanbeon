@@ -26,6 +26,9 @@ rodio = { version = "0.22.2", default-features = false, features = ["playback"] 
 #   cargo add rodio                          # 청각 피드백 (M2)
 
 [target."cfg(target_os = \"macos\")".dependencies]
+accessibility = "0.2.0"
+accessibility-sys = "0.2.0"
+core-foundation = "0.10.1"
 objc2 = "0.6.4"
 objc2-app-kit = "0.3.2"
 # floating 창이 대상 앱의 포커스를 뺏지 않도록 NSPanel(nonactivating)로 승격할 때 사용한다.
