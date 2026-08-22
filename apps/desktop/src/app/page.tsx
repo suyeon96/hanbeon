@@ -14,6 +14,7 @@ import {
   type CoverEvent,
   DEFAULT_SCAN_INTERVAL_MS,
   INTERVAL_NOTICE_MS,
+  type PresetEvent,
   SCAN_ACTIONS,
   type ScanError,
   type ScanSnapshot,
@@ -22,7 +23,9 @@ import type { IntervalEvent } from '@/lib/profile'
 
 const INITIAL: ScanSnapshot = {
   cursor: 0,
-  action: 'next',
+  // 코어의 첫 응답이 오기 전까지 그릴 기본 4칸.
+  cells: SCAN_ACTIONS.map(({ label, name }) => ({ label, name })),
+  preset: null,
   mode: 'scanning',
   intervalMs: DEFAULT_SCAN_INTERVAL_MS,
   phaseMs: DEFAULT_SCAN_INTERVAL_MS,
@@ -90,6 +93,14 @@ export default function FloatingPage() {
       },
     )
 
+    // 앱이 바뀌어 칸이 달라졌다는 안내. 간격 변경과 같은 자리를 쓴다 —
+    // 사용자가 봐야 하는 '방금 무엇이 바뀌었는가'는 한 줄이면 충분하다.
+    const unlistenPreset = listen<PresetEvent>('scan://preset', (event) => {
+      setNotice(event.payload.message)
+      clearTimeout(noticeTimer)
+      noticeTimer = setTimeout(() => setNotice(null), INTERVAL_NOTICE_MS)
+    })
+
     // 조작할 요소를 우리가 가리고 있는지. 코어가 상태가 바뀔 때만 보낸다.
     const unlistenCover = listen<CoverEvent>('window://cover', (event) =>
       setCover(event.payload),
@@ -100,6 +111,7 @@ export default function FloatingPage() {
       unlistenState.then((stop) => stop()).catch(() => {})
       unlistenError.then((stop) => stop()).catch(() => {})
       unlistenInterval.then((stop) => stop()).catch(() => {})
+      unlistenPreset.then((stop) => stop()).catch(() => {})
       unlistenCover.then((stop) => stop()).catch(() => {})
     }
   }, [])
@@ -164,12 +176,15 @@ export default function FloatingPage() {
           gridTemplateColumns="1fr 1fr"
           minH="0"
         >
-          {SCAN_ACTIONS.map((action, index) => (
+          {snapshot.cells.map((cell, index) => (
             <SwitchButton
-              key={action.id}
+              key={`${cell.label}-${index}`}
               cursor={cursorStateAt(index)}
-              label={action.label}
-              name={action.name}
+              // 칸이 홀수면 마지막 하나가 한 줄을 통째로 쓴다. 빈칸을 남기면
+              // 사용자는 거기에도 무언가 있다고 읽는다.
+              full={index === snapshot.cells.length - 1 && index % 2 === 0}
+              label={cell.label}
+              name={cell.name}
             />
           ))}
         </Box>

@@ -16,6 +16,14 @@ describe('SwitchButton', () => {
       <SwitchButton cursor="idle" label="<" name="이전으로" />,
     ).toMatchSnapshot()
   })
+
+  // 칸이 홀수일 때 마지막 하나가 한 줄을 통째로 쓴다. 빈칸을 남기면
+  // 사용자는 거기에도 무언가 있다고 읽는다.
+  it('마지막 홀수 칸은 한 줄을 통째로 쓴다', () => {
+    expect(
+      <SwitchButton cursor="idle" full label="이전 곡" name="이전 곡으로" />,
+    ).toMatchSnapshot()
+  })
 })
 
 describe('UndoPanel', () => {

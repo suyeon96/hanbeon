@@ -22,9 +22,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
-use crate::action::{Action, SCAN_ORDER};
+use crate::action::{Action, Cell};
 use crate::adapt::{Adapter, Adjustment, Limits, Sample};
 use crate::audio::{Audio, Cue};
 use crate::input::Gesture;
@@ -37,6 +37,8 @@ pub const EVENT_STATE: &str = "scan://state";
 pub const EVENT_ERROR: &str = "scan://error";
 /// 주사 간격이 바뀐 이유. 사용자에게 그대로 보여준다.
 pub const EVENT_INTERVAL: &str = "scan://interval";
+/// 앱이 바뀌어 스캔 대상이 달라졌음을 알린다.
+pub const EVENT_PRESET: &str = "scan://preset";
 
 /// 선택 직후 되돌릴 수 있는 시간.
 const CONFIRM_WINDOW: Duration = Duration::from_millis(3000);
@@ -63,18 +65,29 @@ pub enum Mode {
 }
 
 /// 상태기계가 바깥에 요청하는 부수효과.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Command {
     Emit(Action),
     Undo,
     OpenSettings,
 }
 
+/// 화면이 그릴 칸 하나. 무엇을 보내는 칸인지는 알려주지 않는다.
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CellView {
+    pub label: String,
+    pub name: String,
+}
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub cursor: usize,
-    pub action: Action,
+    /// 지금 도는 칸 전체. 앱에 따라 4~7칸이다.
+    pub cells: Vec<CellView>,
+    /// 붙어 있는 앱별 프리셋 이름. 없으면 앞 4칸만 돈다.
+    pub preset: Option<String>,
     pub mode: Mode,
     pub interval_ms: u64,
     /// 지금 모드가 통째로 지속되는 시간. 남은 시간 표시의 분모다.
@@ -96,6 +109,12 @@ struct ErrorPayload {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct PresetPayload {
+    message: String,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct IntervalPayload {
     from_ms: u64,
     to_ms: u64,
@@ -111,6 +130,9 @@ struct Outcome {
 
 struct State {
     cursor: usize,
+    /// 지금 도는 칸. 앞 4칸은 언제나 여기 맨 앞에 있다.
+    cells: Vec<Cell>,
+    preset: Option<String>,
     mode: Mode,
     interval: Duration,
     /// 현재 모드가 끝나는 시각.
@@ -132,6 +154,8 @@ impl State {
         let interval = Duration::from_millis(profile.interval_ms);
         Self {
             cursor: 0,
+            cells: crate::action::base_cells(),
+            preset: None,
             mode: Mode::Scanning,
             interval,
             deadline: now + interval,
@@ -167,6 +191,19 @@ impl State {
         self.enter(self.mode, phase, now);
     }
 
+    /// 앱이 바뀌어 스캔 대상이 달라졌을 때.
+    ///
+    /// 커서를 첫 칸으로 되돌린다. 칸 수가 달라진 자리에 커서를 그대로 두면
+    /// 사용자가 보고 있던 칸과 실제로 실행될 칸이 어긋난다.
+    fn apply_cells(&mut self, cells: Vec<Cell>, preset: Option<String>, now: Instant) {
+        self.cells = cells;
+        self.preset = preset;
+        self.cursor = 0;
+        self.steps = 0;
+        self.entered_at = now;
+        self.enter(Mode::Scanning, self.interval, now);
+    }
+
     /// 모드와 그 모드가 지속되는 시간을 함께 바꾼다.
     ///
     /// `deadline`만 옮기고 `phase`를 놓치면 남은 시간 표시가 실제 마감과
@@ -186,7 +223,7 @@ impl State {
         let sample = Sample {
             reaction_ms: now.duration_since(self.entered_at).as_millis() as u64,
             undo,
-            missed: self.steps >= SCAN_ORDER.len() as u32,
+            missed: self.steps >= self.cells.len() as u32,
         };
 
         let adjustment =
@@ -199,7 +236,15 @@ impl State {
     fn snapshot(&self, now: Instant) -> Snapshot {
         Snapshot {
             cursor: self.cursor,
-            action: Action::at(self.cursor),
+            cells: self
+                .cells
+                .iter()
+                .map(|cell| CellView {
+                    label: cell.label.clone(),
+                    name: cell.name.clone(),
+                })
+                .collect(),
+            preset: self.preset.clone(),
             mode: self.mode,
             interval_ms: self.interval.as_millis() as u64,
             phase_ms: self.phase.as_millis() as u64,
@@ -214,7 +259,7 @@ impl State {
     }
 
     fn step_cursor(&mut self, now: Instant) {
-        self.cursor = (self.cursor + 1) % SCAN_ORDER.len();
+        self.cursor = (self.cursor + 1) % self.cells.len();
         self.entered_at = now;
         self.steps = self.steps.saturating_add(1);
     }
@@ -281,7 +326,7 @@ impl State {
                 };
                 self.steps = 0;
 
-                let command = match Action::at(self.cursor) {
+                let command = match self.cells[self.cursor].action.clone() {
                     Action::Settings => {
                         self.enter(Mode::Dwelling, self.dwell_timeout(), now);
                         Command::OpenSettings
@@ -320,7 +365,7 @@ impl State {
 /// 입력에 대해 어떤 소리를 낼지 정한다.
 ///
 /// 상태 전이와 분리해 두면 소리 규칙만 따로 테스트할 수 있다.
-fn cue_for(gesture: Gesture, command: Option<Command>, mode: Mode) -> Option<Cue> {
+fn cue_for(gesture: Gesture, command: Option<&Command>, mode: Mode) -> Option<Cue> {
     if gesture == Gesture::Long {
         // 정지와 해제는 반드시 구분되어야 한다. 해제를 조용히 넘기면
         // 사용자는 다시 움직이기 시작했는지 화면을 봐야만 알 수 있다.
@@ -369,6 +414,57 @@ impl Scanner {
         if let Ok(mut state) = self.state.lock() {
             state.apply_profile(&profile, Instant::now());
         }
+    }
+
+    /// 포그라운드 앱에 맞는 칸으로 갈아 끼운다.
+    ///
+    /// 바뀐 것이 없으면 아무것도 하지 않는다. 이 함수는 300ms마다 불리므로
+    /// 매번 상태를 갈아엎으면 커서가 제자리를 맴돌아 스캔이 진행되지 않는다.
+    pub fn apply_preset(&self, app: &AppHandle, bundle_id: Option<&str>) {
+        let enabled = self
+            .profile
+            .lock()
+            .map(|profile| profile.app_buttons)
+            .unwrap_or(false);
+
+        let preset = if enabled {
+            bundle_id.and_then(crate::preset::for_bundle)
+        } else {
+            None
+        };
+        let name = preset.map(|preset| preset.name.to_string());
+
+        let snapshot = {
+            let Ok(mut state) = self.state.lock() else {
+                return;
+            };
+            if state.preset == name {
+                return;
+            }
+            let now = Instant::now();
+            state.apply_cells(crate::preset::cells_for(preset), name.clone(), now);
+            state.snapshot(now)
+        };
+
+        let message = match &name {
+            Some(name) => format!("{name} — 버튼 {}개 추가", snapshot.cells.len() - 4),
+            None => "앱별 버튼 없음".to_string(),
+        };
+
+        if log_enabled() {
+            eprintln!("[preset] {message} (칸 {})", snapshot.cells.len());
+        }
+
+        // 칸 수가 달라졌으니 창도 맞춘다. 화면과 실제 칸이 어긋나면 사용자는
+        // 보이지 않는 칸을 누르게 된다.
+        if let Some(window) = app.get_webview_window("floating") {
+            let _ = window::fit_cells(&window, snapshot.cells.len());
+        }
+
+        // 바뀌었다는 사실을 두 감각으로 알린다(PRD 원칙 4).
+        self.audio.play(Cue::Select);
+        let _ = app.emit(EVENT_STATE, snapshot);
+        let _ = app.emit(EVENT_PRESET, PresetPayload { message });
     }
 
     pub fn snapshot(&self) -> Option<Snapshot> {
@@ -433,7 +529,7 @@ impl Scanner {
 
         // 화면과 소리를 먼저 바꾸고 키를 보낸다. 주입이 늦어져도 사용자는
         // 자기 입력이 받아들여졌다는 것을 즉시 알 수 있어야 한다.
-        if let Some(cue) = cue_for(gesture, outcome.command, snapshot.mode) {
+        if let Some(cue) = cue_for(gesture, outcome.command.as_ref(), snapshot.mode) {
             self.audio.play(cue);
         }
         let _ = app.emit(EVENT_STATE, snapshot);
@@ -549,8 +645,8 @@ mod tests {
     /// 커서를 원하는 칸으로 옮긴다.
     fn move_to(state: &mut State, target: Action, start: Instant) -> Instant {
         let mut now = start;
-        for _ in 0..SCAN_ORDER.len() {
-            if Action::at(state.cursor) == target {
+        for _ in 0..state.cells.len() {
+            if state.cells[state.cursor].action == target {
                 return now;
             }
             now += INTERVAL;
@@ -561,11 +657,20 @@ mod tests {
 
     #[test]
     fn 커서는_스캔_순서를_따른다() {
-        assert_eq!(Action::at(0), Action::Next);
-        assert_eq!(Action::at(1), Action::Prev);
-        assert_eq!(Action::at(2), Action::Enter);
-        assert_eq!(Action::at(3), Action::Settings);
-        assert_eq!(Action::at(4), Action::Next);
+        let (mut state, mut now) = state();
+        let order = [
+            Action::Next,
+            Action::Prev,
+            Action::Enter,
+            Action::Settings,
+            Action::Next,
+        ];
+
+        for expected in order {
+            assert_eq!(state.cells[state.cursor].action, expected);
+            now += INTERVAL;
+            state.advance(now);
+        }
     }
 
     #[test]
@@ -710,7 +815,7 @@ mod tests {
         // 머무름이 끝나면 커서는 바로 옆칸인 '이전으로'에 온다.
         let now = now + state.dwell_timeout();
         state.advance(now);
-        assert_eq!(Action::at(state.cursor), Action::Prev);
+        assert_eq!(state.cells[state.cursor].action, Action::Prev);
 
         // 한 번 누르면 되돌아간다. 한 바퀴를 기다리지 않는다.
         assert_eq!(state.select(now).command, Some(Command::Emit(Action::Prev)));
@@ -803,13 +908,13 @@ mod tests {
         assert_eq!(
             cue_for(
                 Gesture::Short,
-                Some(Command::Emit(Action::Enter)),
+                Some(&Command::Emit(Action::Enter)),
                 Mode::Confirm
             ),
             Some(Cue::Undo)
         );
         assert_eq!(
-            cue_for(Gesture::Short, Some(Command::Undo), Mode::Scanning),
+            cue_for(Gesture::Short, Some(&Command::Undo), Mode::Scanning),
             Some(Cue::Undo)
         );
     }

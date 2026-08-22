@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager, PhysicalPosition, WebviewWindow};
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
 use crate::profile::Profile;
 
@@ -13,6 +13,12 @@ const EDGE_MARGIN: f64 = 24.0;
 
 /// 저장된 위치를 되살릴 때 화면 안에 최소한 이만큼은 남아 있어야 한다(물리 px).
 const MIN_VISIBLE: i32 = 80;
+
+/// 컨트롤러 창의 가로 폭과, 4칸(2행)일 때의 높이(논리 px).
+const WIDTH: f64 = 360.0;
+const BASE_HEIGHT: f64 = 240.0;
+/// 행이 하나 늘 때 더해지는 높이. 칸 높이 60 + 칸 사이 여백 8.
+const ROW_HEIGHT: f64 = 68.0;
 
 /// 이동이 이 시간 동안 멎으면 드래그가 끝난 것으로 본다.
 const SETTLE: Duration = Duration::from_millis(400);
@@ -45,6 +51,40 @@ fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
     let y = origin.y + screen.height as i32 - size.height as i32 - margin;
 
     window.set_position(PhysicalPosition::new(x, y))
+}
+
+/// 칸 수에 맞춰 창 높이를 맞춘다.
+///
+/// **좌상단을 고정하고 아래로 자란다.** 그래야 앞 4칸의 화면상 자리가 그대로
+/// 유지된다 — 사용자는 자리로 동작을 기억하므로, 칸이 늘 때마다 4칸이 움직이면
+/// 익힌 것이 매번 무효가 된다.
+///
+/// 대신 아래로 자라다 화면 밖으로 나갈 수 있다. 그때만 창을 위로 올린다.
+pub fn fit_cells(window: &WebviewWindow, cells: usize) -> tauri::Result<()> {
+    let rows = cells.div_ceil(2).max(2);
+    let height = BASE_HEIGHT + (rows as f64 - 2.0) * ROW_HEIGHT;
+
+    window.set_size(LogicalSize::new(WIDTH, height))?;
+    nudge_onto_screen(window)
+}
+
+/// 창이 화면 아래로 넘쳤으면 넘친 만큼만 올린다.
+fn nudge_onto_screen(window: &WebviewWindow) -> tauri::Result<()> {
+    let Some(monitor) = window.current_monitor()? else {
+        return Ok(());
+    };
+
+    let position = window.outer_position()?;
+    let size = window.outer_size()?;
+    let origin = monitor.position();
+    let bottom = origin.y + monitor.size().height as i32;
+
+    let overflow = position.y + size.height as i32 - bottom;
+    if overflow <= 0 {
+        return Ok(());
+    }
+
+    window.set_position(PhysicalPosition::new(position.x, position.y - overflow))
 }
 
 /// 사용자가 옮겨 둔 위치로 되돌린다.

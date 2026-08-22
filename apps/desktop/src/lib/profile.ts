@@ -18,6 +18,7 @@ export interface Profile {
   windowPosition: [number, number] | null
   dimWhenCovered: boolean
   dimPercent: number
+  appButtons: boolean
   onboarded: boolean
 }
 
