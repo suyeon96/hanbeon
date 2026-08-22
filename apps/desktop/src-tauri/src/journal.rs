@@ -62,6 +62,10 @@ pub enum Event {
         action: String,
         reaction_ms: u64,
         steps: u32,
+        /// 그때 순환에 있던 자리 수. `steps`가 이 값 이상이면 원하는 칸을
+        /// 지나쳐 한 바퀴를 더 기다린 것이다. 자리 수는 앱에 따라 달라지므로
+        /// 함께 남기지 않으면 나중에 셀 수 없다.
+        cycle: usize,
         ok: bool,
         error: Option<String>,
     },
@@ -210,12 +214,14 @@ mod tests {
             action: "next".into(),
             reaction_ms: 420,
             steps: 2,
+            cycle: 5,
             ok: true,
             error: None,
         });
 
         assert_eq!(value["reactionMs"], 420);
         assert_eq!(value["steps"], 2);
+        assert_eq!(value["cycle"], 5);
         assert_eq!(value["ok"], true);
     }
 

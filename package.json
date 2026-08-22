@@ -27,7 +27,8 @@
     "desktop": "bun run -F ./apps/desktop tauri dev",
     "desktop:build": "bun run -F ./apps/desktop tauri build",
     "prepare": "husky",
-    "changepacks": "bunx @changepacks/cli"
+    "changepacks": "bunx @changepacks/cli",
+    "summary": "bun apps/admin/scripts/summary.ts"
   },
   "author": "devfive"
 }
