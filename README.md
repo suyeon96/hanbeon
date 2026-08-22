@@ -104,7 +104,7 @@ bun run test           # bun test + cargo tarpaulin
 
 기본적으로 docker compose로 작동되게 설계됨 (웹·API 한정). 데스크톱 앱은 `bun run desktop:build`로 플랫폼별 번들을 생성합니다.
 
-`.github/workflows/deploy.yml`의 배포 작업은 self-hosted 러너에서 배포 자격증명을 들고 실행되므로 **pull request에서는 절대 돌지 않습니다.** 검사(lint·test·build)만 GitHub 호스팅 러너에서 돕니다. 포크에서 이 워크플로를 그대로 쓰려면 배포 작업을 지우거나 자신의 러너·시크릿으로 바꿔야 합니다.
+배포는 CI에 두지 않습니다. `.github/workflows/ci.yml`은 lint·test·build 검사만 하며 GitHub 호스팅 러너에서 돕니다.
 
 ## 기여
 
