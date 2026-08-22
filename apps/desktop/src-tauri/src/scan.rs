@@ -27,7 +27,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::action::{Action, Cell, Kind};
 use crate::adapt::{Adapter, Adjustment, Limits, Sample};
 use crate::audio::{Audio, Cue};
-use crate::input::Gesture;
+use crate::input::{Gesture, Judgement};
+use crate::journal::{Event, Journal};
 use crate::profile::{Profile, UndoMapping};
 use crate::{emit, window};
 
@@ -62,6 +63,19 @@ pub enum Mode {
     Confirm,
     /// 정지. 어떤 동작도 실행하지 않는다.
     Paused,
+}
+
+impl Mode {
+    /// 기록에 남길 이름. 코어의 타입을 그대로 적으면 타입이 바뀔 때마다
+    /// 지난 기록을 읽을 수 없게 된다.
+    fn as_str(self) -> &'static str {
+        match self {
+            Mode::Scanning => "scanning",
+            Mode::Dwelling => "dwelling",
+            Mode::Confirm => "confirm",
+            Mode::Paused => "paused",
+        }
+    }
 }
 
 /// 상태기계가 바깥에 요청하는 부수효과.
@@ -124,10 +138,19 @@ struct IntervalPayload {
 }
 
 /// 짧게 누름의 결과. 실행할 동작과, 그로 인한 간격 조정.
+///
+/// 반응시간과 지나온 자리 수를 함께 들고 나온다. 실행한 뒤에는 이미 상태가
+/// 바뀌어 있어서, 그때 가서는 '누르기까지 얼마나 걸렸는지'를 알 수 없다.
 #[derive(Debug, Default)]
 struct Outcome {
     command: Option<Command>,
     adjustment: Option<Adjustment>,
+    /// 커서가 그 칸에 들어온 뒤 누르기까지.
+    reaction_ms: u64,
+    /// 지난 선택 이후 커서가 지나온 자리 수.
+    steps: u32,
+    /// 누른 칸의 이름.
+    cell: String,
 }
 
 struct State {
@@ -329,6 +352,10 @@ impl State {
 
     /// 짧게 누름. 실행할 부수효과와 간격 조정을 돌려준다.
     fn select(&mut self, now: Instant) -> Outcome {
+        let reaction_ms = now.duration_since(self.entered_at).as_millis() as u64;
+        let steps = self.steps;
+        let cell = self.cells[self.cursor()].label.clone();
+
         match self.mode {
             // 정지 중에는 어떤 동작도 실행하지 않는다.
             Mode::Paused => Outcome::default(),
@@ -345,6 +372,9 @@ impl State {
                 Outcome {
                     command: Some(Command::Undo),
                     adjustment,
+                    reaction_ms,
+                    steps,
+                    cell,
                 }
             }
 
@@ -380,6 +410,9 @@ impl State {
                 Outcome {
                     command: Some(command),
                     adjustment,
+                    reaction_ms,
+                    steps,
+                    cell,
                 }
             }
         }
@@ -423,10 +456,11 @@ pub struct Scanner {
     state: Arc<Mutex<State>>,
     audio: Audio,
     profile: Arc<Mutex<Profile>>,
+    journal: Journal,
 }
 
 impl Scanner {
-    pub fn new(profile: Arc<Mutex<Profile>>, audio: Audio) -> Self {
+    pub fn new(profile: Arc<Mutex<Profile>>, audio: Audio, journal: Journal) -> Self {
         let state = {
             let profile = profile.lock().expect("프로필 잠금 실패");
             State::new(&profile, Instant::now())
@@ -436,6 +470,7 @@ impl Scanner {
             state: Arc::new(Mutex::new(state)),
             audio,
             profile,
+            journal,
         }
     }
 
@@ -500,6 +535,11 @@ impl Scanner {
             let _ = window::fit_cells(&window, extras);
         }
 
+        self.journal.record(Event::Preset {
+            preset: name.clone(),
+            cells: snapshot.cells.len(),
+        });
+
         // 바뀌었다는 사실을 두 감각으로 알린다(PRD 원칙 4).
         self.audio.play(Cue::Select);
         let _ = app.emit(EVENT_STATE, snapshot);
@@ -518,6 +558,7 @@ impl Scanner {
     pub fn start(&self, app: AppHandle) {
         let state = Arc::clone(&self.state);
         let audio = self.audio.clone();
+        let journal = self.journal.clone();
 
         thread::spawn(move || {
             loop {
@@ -536,6 +577,18 @@ impl Scanner {
                     if snapshot.mode == Mode::Scanning {
                         audio.play(Cue::Tick);
                     }
+
+                    journal.record(Event::Cursor {
+                        cursor: snapshot.cursor,
+                        cell: snapshot
+                            .cells
+                            .get(snapshot.cursor)
+                            .map(|cell| cell.label.clone())
+                            .unwrap_or_default(),
+                        mode: snapshot.mode.as_str(),
+                        interval_ms: snapshot.interval_ms,
+                    });
+
                     let _ = app.emit(EVENT_STATE, snapshot);
                 }
             }
@@ -543,7 +596,9 @@ impl Scanner {
     }
 
     /// 판정된 제스처를 상태기계에 넣는다.
-    pub fn handle(&self, app: &AppHandle, gesture: Gesture) {
+    pub fn handle(&self, app: &AppHandle, judgement: Judgement) {
+        let Judgement { gesture, held } = judgement;
+
         let (outcome, snapshot) = {
             let Ok(mut state) = self.state.lock() else {
                 return;
@@ -566,6 +621,10 @@ impl Scanner {
             );
         }
 
+        // 스냅샷은 곧 프론트로 넘어가며 소유권을 잃는다. 기록에 쓸 값은
+        // 그 전에 챙겨 둔다.
+        let mode = snapshot.mode;
+
         // 화면과 소리를 먼저 바꾸고 키를 보낸다. 주입이 늦어져도 사용자는
         // 자기 입력이 받아들여졌다는 것을 즉시 알 수 있어야 한다.
         if let Some(cue) = cue_for(gesture, outcome.command.as_ref(), snapshot.mode) {
@@ -577,13 +636,46 @@ impl Scanner {
             self.announce(app, adjustment);
         }
 
+        if gesture == Gesture::Long {
+            self.journal.record(Event::Pause {
+                paused: mode == Mode::Paused,
+            });
+        }
+
+        self.journal.record(Event::Input {
+            gesture: match gesture {
+                Gesture::Short => "short",
+                Gesture::Long => "long",
+            },
+            held_ms: held.as_millis() as u64,
+        });
+
         if let Some(command) = outcome.command {
             let mapping = self
                 .profile
                 .lock()
                 .map(|profile| profile.undo_mapping)
                 .unwrap_or_default();
-            execute(app, command, mapping);
+
+            let undo = command == Command::Undo;
+            let name = command_name(&command);
+            let failure = execute(app, command, mapping);
+
+            self.journal.record(if undo {
+                Event::Undo {
+                    mapping: format!("{mapping:?}").to_lowercase(),
+                    ok: failure.is_none(),
+                }
+            } else {
+                Event::Action {
+                    cell: outcome.cell,
+                    action: name,
+                    reaction_ms: outcome.reaction_ms,
+                    steps: outcome.steps,
+                    ok: failure.is_none(),
+                    error: failure,
+                }
+            });
         }
     }
 
@@ -609,6 +701,12 @@ impl Scanner {
         if log_enabled() {
             eprintln!("[scan] 간격 조정: {description}");
         }
+
+        self.journal.record(Event::Interval {
+            from_ms: adjustment.from_ms,
+            to_ms: adjustment.to_ms,
+            reason: description.clone(),
+        });
 
         let _ = app.emit(
             EVENT_INTERVAL,
@@ -638,24 +736,42 @@ pub fn interval_override() -> Option<u64> {
         .and_then(|value| value.parse::<u64>().ok())
 }
 
-fn execute(app: &AppHandle, command: Command, mapping: UndoMapping) {
+/// 기록에 남길 동작 이름.
+fn command_name(command: &Command) -> String {
+    match command {
+        Command::Emit(Action::Next) => "next".into(),
+        Command::Emit(Action::Prev) => "prev".into(),
+        Command::Emit(Action::Enter) => "enter".into(),
+        Command::Emit(Action::Settings) | Command::OpenSettings => "settings".into(),
+        Command::Emit(Action::Shortcut(shortcut)) => format!("shortcut:{:?}", shortcut.key),
+        Command::Undo => "undo".into(),
+    }
+}
+
+/// 실행하고, 실패했으면 그 사유를 돌려준다.
+fn execute(app: &AppHandle, command: Command, mapping: UndoMapping) -> Option<String> {
     let result = match command {
         Command::Emit(action) => emit::send(action),
         Command::Undo => emit::send_undo(mapping),
         Command::OpenSettings => window::show_settings(app).map_err(emit::EmitError::from_message),
     };
 
-    if let Err(error) = result {
-        if log_enabled() {
-            eprintln!("[scan] 실행 실패: {}", error.message);
+    match result {
+        Ok(()) => None,
+        Err(error) => {
+            if log_enabled() {
+                eprintln!("[scan] 실행 실패: {}", error.message);
+            }
+            let message = error.message.clone();
+            let _ = app.emit(
+                EVENT_ERROR,
+                ErrorPayload {
+                    message: error.message,
+                    needs_permission: error.needs_permission,
+                },
+            );
+            Some(message)
         }
-        let _ = app.emit(
-            EVENT_ERROR,
-            ErrorPayload {
-                message: error.message,
-                needs_permission: error.needs_permission,
-            },
-        );
     }
 }
 

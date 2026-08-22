@@ -11,6 +11,7 @@ mod audio;
 mod emit;
 mod foreground;
 mod input;
+mod journal;
 mod occlusion;
 mod preset;
 mod profile;
@@ -105,6 +106,15 @@ fn save_profile(
     })
 }
 
+/// 기록이 어디에 쌓이는지 사용자가 볼 수 있어야 한다. 어디 있는지 모르는
+/// 기록은 지울 수도, 실증 담당자에게 건넬 수도 없다.
+#[tauri::command]
+fn log_directory(app: AppHandle) -> Result<String, String> {
+    journal::directory(&app)
+        .map(|path| path.display().to_string())
+        .ok_or_else(|| "기록 폴더를 찾지 못했습니다.".to_string())
+}
+
 #[tauri::command]
 fn open_settings(app: AppHandle) -> Result<(), String> {
     window::show_settings(&app)
@@ -156,13 +166,25 @@ pub fn run() {
             let audio = Audio::spawn();
             audio.set_enabled(profile.sound);
 
+            // 실증 지표는 실측으로만 주장할 수 있고, 그러려면 무엇이 언제
+            // 일어났는지가 파일로 남아야 한다(PRD 10절).
+            let journal = if profile.logging {
+                journal::Journal::open(app.handle())
+            } else {
+                journal::Journal::off()
+            };
+            journal.record(journal::Event::Session {
+                phase: "start",
+                version: app.package_info().version.to_string(),
+            });
+
             let switch_code = input::configured_code(&profile.switch_key);
             let detector: SharedDetector = Arc::new(Mutex::new(GestureDetector::new(
                 Duration::from_millis(profile.long_press_ms),
             )));
 
             let profile = Arc::new(Mutex::new(profile));
-            let scanner = Scanner::new(Arc::clone(&profile), audio);
+            let scanner = Scanner::new(Arc::clone(&profile), audio, journal.clone());
             let moves = window::MoveWatch::default();
 
             app.manage(SharedProfile(Arc::clone(&profile)));
@@ -173,9 +195,25 @@ pub fn run() {
             moves.watch(app.handle().clone(), Arc::clone(&profile));
             foreground::watch(app.handle().clone(), Arc::clone(&profile), scanner.clone());
             scanner.start(app.handle().clone());
-            input::register(app.handle(), detector, switch_code, move |app, gesture| {
-                scanner.handle(app, gesture);
-            })?;
+            let registered = input::register(
+                app.handle(),
+                detector,
+                switch_code,
+                move |app, judgement| {
+                    scanner.handle(app, judgement);
+                },
+            );
+            journal.record(journal::Event::Switch {
+                state: if registered.is_ok() {
+                    "registered"
+                } else {
+                    "failed"
+                },
+                key: format!("{switch_code:?}"),
+            });
+            registered?;
+
+            app.manage(journal);
 
             Ok(())
         })
@@ -204,7 +242,8 @@ pub fn run() {
             get_profile,
             save_profile,
             open_settings,
-            close_settings
+            close_settings,
+            log_directory
         ])
         .build(tauri::generate_context!())
         .expect("한번 앱을 시작하지 못했습니다");
@@ -212,6 +251,15 @@ pub fn run() {
     app.run(|app, event| {
         // 적응으로 조정된 간격은 메모리에만 있다. 종료할 때 한 번 적어 두어야
         // 다음에 켰을 때 사용자가 익숙해진 속도로 시작한다.
+        if let tauri::RunEvent::Exit = event
+            && let Some(journal) = app.try_state::<journal::Journal>()
+        {
+            journal.record(journal::Event::Session {
+                phase: "stop",
+                version: app.package_info().version.to_string(),
+            });
+        }
+
         if let tauri::RunEvent::Exit = event
             && let Some(shared) = app.try_state::<SharedProfile>()
             && let Ok(profile) = shared.0.lock()
