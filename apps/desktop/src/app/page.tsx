@@ -1,6 +1,6 @@
 'use client'
 
-import { Box, Text, VStack } from '@devup-ui/react'
+import { Box, Flex, Text, VStack } from '@devup-ui/react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useEffect, useState } from 'react'
@@ -24,7 +24,7 @@ import type { IntervalEvent } from '@/lib/profile'
 const INITIAL: ScanSnapshot = {
   cursor: 0,
   // 코어의 첫 응답이 오기 전까지 그릴 기본 4칸.
-  cells: SCAN_ACTIONS.map(({ label, name }) => ({ label, name })),
+  cells: SCAN_ACTIONS.map(({ kind, label, name }) => ({ kind, label, name })),
   preset: null,
   mode: 'scanning',
   intervalMs: DEFAULT_SCAN_INTERVAL_MS,
@@ -123,6 +123,13 @@ export default function FloatingPage() {
   // 그 순간 화면이 흐려지면 되돌릴 기회를 놓친다. 가려진 것보다 이쪽이 무겁다.
   const dimmed = cover.covered && mode !== 'confirm'
 
+  // 갈래마다 자리가 다르다. 코어가 보낸 순서를 그대로 두고 갈래로만 나눈다.
+  const indexed = snapshot.cells.map((cell, index) => ({ cell, index }))
+  const moves = indexed.filter(({ cell }) => cell.kind === 'move')
+  const enter = indexed.find(({ cell }) => cell.kind === 'enter')
+  const extras = indexed.filter(({ cell }) => cell.kind === 'extra')
+  const settings = indexed.find(({ cell }) => cell.kind === 'settings')
+
   const cursorStateAt = (index: number): CursorState => {
     if (mode === 'paused' || index !== cursor) return 'idle'
     return mode === 'dwelling' ? 'dwelling' : 'scanning'
@@ -169,25 +176,77 @@ export default function FloatingPage() {
       {mode === 'confirm' ? (
         <UndoPanel />
       ) : (
-        <Box
-          display="grid"
-          flex={1}
-          gap="8px"
-          gridTemplateColumns="1fr 1fr"
-          minH="0"
-        >
-          {snapshot.cells.map((cell, index) => (
+        <VStack flex={1} gap="8px" minH="0">
+          {/* 이동은 왼쪽에 세로로, 선택은 그 오른쪽에 같은 높이로. 옮긴 뒤에
+              고르는 흐름이 가장 잦아서 둘을 가장 가까이 둔다. 커서도 이동 칸
+              바로 뒤에 선택을 한 번씩 들른다. */}
+          <Box
+            display="grid"
+            flexShrink={0}
+            gap="8px"
+            gridTemplateColumns="1fr 1fr"
+            h="128px"
+          >
+            <VStack gap="8px">
+              {moves.map(({ cell, index }) => (
+                <SwitchButton
+                  key={index}
+                  cursor={cursorStateAt(index)}
+                  label={cell.label}
+                  name={cell.name}
+                />
+              ))}
+            </VStack>
+            {enter && (
+              <SwitchButton
+                cursor={cursorStateAt(enter.index)}
+                label={enter.cell.label}
+                name={enter.cell.name}
+              />
+            )}
+          </Box>
+
+          {/* 앱별 칸은 구분선 아래에 따로 모은다. 지금 앱에서만 쓸 수 있고
+              앱이 바뀌면 사라지는 칸이라, 언제나 있는 칸과 섞이면 안 된다. */}
+          {extras.length > 0 && (
+            <Flex alignItems="center" flexShrink={0} gap="8px">
+              <Box bg="$extraBorder" flex={1} h="1px" />
+              <Text color="$caption" typography="caption" whiteSpace="nowrap">
+                {snapshot.preset ?? '앱별 버튼'}
+              </Text>
+              <Box bg="$extraBorder" flex={1} h="1px" />
+            </Flex>
+          )}
+
+          {extras.length > 0 && (
+            <Box
+              display="grid"
+              flexShrink={0}
+              gap="8px"
+              gridTemplateColumns="1fr 1fr"
+            >
+              {extras.map(({ cell, index }, at) => (
+                <SwitchButton
+                  key={index}
+                  cursor={cursorStateAt(index)}
+                  full={at === extras.length - 1 && at % 2 === 0}
+                  label={cell.label}
+                  name={cell.name}
+                  tone="extra"
+                />
+              ))}
+            </Box>
+          )}
+
+          {settings && (
             <SwitchButton
-              key={`${cell.label}-${index}`}
-              cursor={cursorStateAt(index)}
-              // 칸이 홀수면 마지막 하나가 한 줄을 통째로 쓴다. 빈칸을 남기면
-              // 사용자는 거기에도 무언가 있다고 읽는다.
-              full={index === snapshot.cells.length - 1 && index % 2 === 0}
-              label={cell.label}
-              name={cell.name}
+              compact
+              cursor={cursorStateAt(settings.index)}
+              label={settings.cell.label}
+              name={settings.cell.name}
             />
-          ))}
-        </Box>
+          )}
+        </VStack>
       )}
 
       <StatusLine

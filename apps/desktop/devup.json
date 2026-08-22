@@ -26,7 +26,9 @@
         "undoBg": "#FFF3D6",
         "undoText": "#7A4A00",
         "progressTrack": "#E4EBEA",
-        "dragGrip": "#B9C7C6"
+        "dragGrip": "#B9C7C6",
+        "extraIdleBg": "#EEF5F4",
+        "extraBorder": "#A9C8C3"
       },
       "dark": {
         "primary": "#4FD1C5",
@@ -53,7 +55,9 @@
         "undoBg": "#3B2E0C",
         "undoText": "#FBBF24",
         "progressTrack": "#232E2E",
-        "dragGrip": "#4C5A5A"
+        "dragGrip": "#4C5A5A",
+        "extraIdleBg": "#16211F",
+        "extraBorder": "#3A5854"
       },
       "contrast": {
         "primary": "#FFD400",
@@ -80,7 +84,9 @@
         "undoBg": "#FFD400",
         "undoText": "#000000",
         "progressTrack": "#000000",
-        "dragGrip": "#FFFFFF"
+        "dragGrip": "#FFFFFF",
+        "extraIdleBg": "#000000",
+        "extraBorder": "#FFD400"
       }
     },
     "typography": {

@@ -22,7 +22,7 @@
         "title": "한번",
         "url": "index.html",
         "width": 360,
-        "height": 240,
+        "height": 280,
         "minWidth": 240,
         "minHeight": 160,
         "resizable": false,

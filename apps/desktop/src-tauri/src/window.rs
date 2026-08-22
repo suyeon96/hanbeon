@@ -14,11 +14,22 @@ const EDGE_MARGIN: f64 = 24.0;
 /// 저장된 위치를 되살릴 때 화면 안에 최소한 이만큼은 남아 있어야 한다(물리 px).
 const MIN_VISIBLE: i32 = 80;
 
-/// 컨트롤러 창의 가로 폭과, 4칸(2행)일 때의 높이(논리 px).
+/// 컨트롤러 창의 가로 폭(논리 px).
 const WIDTH: f64 = 360.0;
-const BASE_HEIGHT: f64 = 240.0;
-/// 행이 하나 늘 때 더해지는 높이. 칸 높이 60 + 칸 사이 여백 8.
-const ROW_HEIGHT: f64 = 68.0;
+
+// 높이는 화면의 CSS 배치와 짝이 맞아야 한다. 어긋나면 칸이 잘리거나 빈 자리가
+// 남는다. 아래 값은 `app/page.tsx`의 배치와 같은 뜻이다.
+/// 손잡이·남은 시간 막대·상태 줄·바깥 여백·그 사이 간격을 모두 더한 값.
+const CHROME: f64 = 96.0;
+/// 이동 두 칸이 세로로 쌓인 블록(오른쪽의 선택 칸이 같은 높이를 쓴다).
+const MOVE_BLOCK: f64 = 128.0;
+/// 앱별 칸 구분선과 그 위아래 간격.
+const DIVIDER: f64 = 28.0;
+/// 칸 한 줄과 칸 사이 여백.
+const ROW: f64 = 60.0;
+const GAP: f64 = 8.0;
+/// 설정 줄. 가장 드물게 쓰므로 다른 칸보다 낮다.
+const SETTINGS_ROW: f64 = 48.0;
 
 /// 이동이 이 시간 동안 멎으면 드래그가 끝난 것으로 본다.
 const SETTLE: Duration = Duration::from_millis(400);
@@ -27,6 +38,10 @@ const SETTLE: Duration = Duration::from_millis(400);
 const WATCH_TICK: Duration = Duration::from_millis(100);
 
 pub fn prepare_floating(window: &WebviewWindow, saved: Option<(i32, i32)>) -> tauri::Result<()> {
+    // 높이를 계산식으로 한 번 맞춘다. tauri.conf.json의 값과 여기 계산이
+    // 어긋나면 첫 화면에서 맨 아래 칸이 잘린 채로 시작한다.
+    fit_cells(window, 0)?;
+
     match saved {
         Some(position) => restore(window, position)?,
         None => place_bottom_right(window)?,
@@ -60,9 +75,14 @@ fn place_bottom_right(window: &WebviewWindow) -> tauri::Result<()> {
 /// 익힌 것이 매번 무효가 된다.
 ///
 /// 대신 아래로 자라다 화면 밖으로 나갈 수 있다. 그때만 창을 위로 올린다.
-pub fn fit_cells(window: &WebviewWindow, cells: usize) -> tauri::Result<()> {
-    let rows = cells.div_ceil(2).max(2);
-    let height = BASE_HEIGHT + (rows as f64 - 2.0) * ROW_HEIGHT;
+pub fn fit_cells(window: &WebviewWindow, extras: usize) -> tauri::Result<()> {
+    let mut height = CHROME + MOVE_BLOCK;
+
+    if extras > 0 {
+        let rows = extras.div_ceil(2) as f64;
+        height += DIVIDER + rows * ROW + (rows - 1.0) * GAP + GAP;
+    }
+    height += GAP + SETTINGS_ROW;
 
     window.set_size(LogicalSize::new(WIDTH, height))?;
     nudge_onto_screen(window)
