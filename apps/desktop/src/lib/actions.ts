@@ -21,10 +21,24 @@ export type ScanActionId = (typeof SCAN_ACTIONS)[number]['id']
  */
 export type ScanMode = 'scanning' | 'dwelling' | 'confirm' | 'paused'
 
+/** 화면에 그리는 칸 하나. 코어가 순서대로 보낸다. */
+export interface ScanCell {
+  label: string
+  name: string
+}
+
 /** 코어가 `scan://state`로 보내는 커서 상태. */
 export interface ScanSnapshot {
   cursor: number
-  action: ScanActionId
+  /**
+   * 지금 도는 칸 전체. 앱에 따라 4~7칸이다.
+   *
+   * 앞 4칸은 언제나 같은 순서로 맨 앞에 있다. 사용자는 자리로 동작을
+   * 기억하므로 이 순서가 앱마다 달라지면 익힌 것이 무효가 된다.
+   */
+  cells: ScanCell[]
+  /** 붙어 있는 앱별 프리셋 이름. 없으면 앞 4칸만 돈다. */
+  preset: string | null
   mode: ScanMode
   intervalMs: number
   /**
@@ -70,3 +84,13 @@ export const UNDO_WINDOW_MS = 3000
  * 지난 조정 문구가 계속 붙어 있으면 지금 값을 확인할 수 없게 된다.
  */
 export const INTERVAL_NOTICE_MS = 6000
+
+/**
+ * 앱이 바뀌어 칸이 달라졌을 때 코어가 `scan://preset`으로 보내는 안내.
+ *
+ * 문구는 코어가 만든다. 어떤 프리셋이 몇 칸을 붙였는지는 코어만 알고,
+ * 화면이 그 규칙을 한 번 더 갖고 있으면 둘이 어긋난다.
+ */
+export interface PresetEvent {
+  message: string
+}

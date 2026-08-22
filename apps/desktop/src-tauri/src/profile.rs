@@ -55,6 +55,8 @@ pub struct Profile {
     pub dim_when_covered: bool,
     /// 가릴 때의 불투명도(퍼센트, 25~100). 낮을수록 뒤가 잘 보이고 컨트롤러는 흐려진다.
     pub dim_percent: u8,
+    /// 앱에 따라 칸을 더 붙일지. 꺼 두면 어떤 앱에서도 앞 4칸만 돈다.
+    pub app_buttons: bool,
     /// 초기 설정 3단계를 마쳤는지. 아니면 첫 실행 안내를 띄운다.
     pub onboarded: bool,
 }
@@ -77,6 +79,7 @@ impl Default for Profile {
             // 뒤를 알아볼 수 있으면서 컨트롤러 글자도 남는 지점. 저시력
             // 사용자에게 더 낮은 값은 화면을 잃는 것과 같아서 기본으로 두지 않는다.
             dim_percent: 40,
+            app_buttons: true,
             onboarded: false,
         }
     }

@@ -9,10 +9,13 @@ mod action;
 mod adapt;
 mod audio;
 mod emit;
+mod foreground;
 mod input;
 mod occlusion;
+mod preset;
 mod profile;
 mod scan;
+mod shortcut;
 mod tray;
 mod window;
 
@@ -168,7 +171,7 @@ pub fn run() {
             app.manage(moves.clone());
 
             moves.watch(app.handle().clone(), Arc::clone(&profile));
-            occlusion::watch(app.handle().clone(), Arc::clone(&profile));
+            foreground::watch(app.handle().clone(), Arc::clone(&profile), scanner.clone());
             scanner.start(app.handle().clone());
             input::register(app.handle(), detector, switch_code, move |app, gesture| {
                 scanner.handle(app, gesture);

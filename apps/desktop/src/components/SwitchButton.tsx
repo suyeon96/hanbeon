@@ -7,6 +7,8 @@ export type CursorState = 'idle' | 'scanning' | 'dwelling'
 
 interface SwitchButtonProps {
   cursor: CursorState
+  /** 한 줄을 통째로 차지할지. 칸이 홀수일 때 마지막 하나가 쓴다. */
+  full?: boolean
   label: string
   name: string
 }
@@ -20,7 +22,12 @@ interface SwitchButtonProps {
  * listbox/option 같은 role은 붙이지 않는다. floating 창은 포커스를 받지 않으므로
  * 화면 낭독기의 탐색 대상이 아니고, 잘못된 semantic을 노출하면 오히려 방해가 된다.
  */
-export function SwitchButton({ cursor, label, name }: SwitchButtonProps) {
+export function SwitchButton({
+  cursor,
+  full = false,
+  label,
+  name,
+}: SwitchButtonProps) {
   const active = cursor !== 'idle'
 
   return (
@@ -34,6 +41,7 @@ export function SwitchButton({ cursor, label, name }: SwitchButtonProps) {
       boxSizing="border-box"
       color={active ? '$scanCursorText' : '$scanIdleText'}
       gap="0px"
+      gridColumn={full ? 'span 2' : 'auto'}
       justifyContent="center"
       minH="60px"
       overflow="hidden"
