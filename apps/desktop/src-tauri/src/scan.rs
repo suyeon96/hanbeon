@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::action::{Action, Cell};
+use crate::action::{Action, Cell, Kind};
 use crate::adapt::{Adapter, Adjustment, Limits, Sample};
 use crate::audio::{Audio, Cue};
 use crate::input::Gesture;
@@ -78,6 +78,8 @@ pub enum Command {
 pub struct CellView {
     pub label: String,
     pub name: String,
+    /// 화면이 배치와 생김새를 정하는 근거. 앱별 칸은 여기서 갈린다.
+    pub kind: Kind,
 }
 
 #[derive(Clone, Serialize)]
@@ -129,9 +131,18 @@ struct Outcome {
 }
 
 struct State {
-    cursor: usize,
-    /// 지금 도는 칸. 앞 4칸은 언제나 여기 맨 앞에 있다.
+    /// 순환에서 지금 몇 번째 자리인지. 칸 번호가 아니다 —
+    /// `Enter`는 칸이 하나여도 순환에는 두 번 나온다.
+    position: usize,
+    /// 지금 도는 칸.
     cells: Vec<Cell>,
+    /// 자리 → 칸 번호.
+    order: Vec<usize>,
+    /// 다음에 자리를 옮길 때 처음으로 돌아갈지.
+    ///
+    /// 선택한 직후에는 다시 옮기는 일이 가장 잦다. 그래서 `Enter`를 누르면
+    /// 이어서 순환하는 대신 첫 이동 칸부터 다시 시작한다.
+    restart_next: bool,
     preset: Option<String>,
     mode: Mode,
     interval: Duration,
@@ -152,9 +163,14 @@ struct State {
 impl State {
     fn new(profile: &Profile, now: Instant) -> Self {
         let interval = Duration::from_millis(profile.interval_ms);
+        let cells = crate::action::base_cells();
+        let order = crate::action::scan_order(&cells);
+
         Self {
-            cursor: 0,
-            cells: crate::action::base_cells(),
+            position: 0,
+            cells,
+            order,
+            restart_next: false,
             preset: None,
             mode: Mode::Scanning,
             interval,
@@ -196,12 +212,19 @@ impl State {
     /// 커서를 첫 칸으로 되돌린다. 칸 수가 달라진 자리에 커서를 그대로 두면
     /// 사용자가 보고 있던 칸과 실제로 실행될 칸이 어긋난다.
     fn apply_cells(&mut self, cells: Vec<Cell>, preset: Option<String>, now: Instant) {
+        self.order = crate::action::scan_order(&cells);
         self.cells = cells;
         self.preset = preset;
-        self.cursor = 0;
+        self.position = 0;
+        self.restart_next = false;
         self.steps = 0;
         self.entered_at = now;
         self.enter(Mode::Scanning, self.interval, now);
+    }
+
+    /// 지금 커서가 있는 칸의 번호.
+    fn cursor(&self) -> usize {
+        self.order.get(self.position).copied().unwrap_or(0)
     }
 
     /// 모드와 그 모드가 지속되는 시간을 함께 바꾼다.
@@ -223,7 +246,7 @@ impl State {
         let sample = Sample {
             reaction_ms: now.duration_since(self.entered_at).as_millis() as u64,
             undo,
-            missed: self.steps >= self.cells.len() as u32,
+            missed: self.steps >= self.order.len() as u32,
         };
 
         let adjustment =
@@ -235,13 +258,14 @@ impl State {
 
     fn snapshot(&self, now: Instant) -> Snapshot {
         Snapshot {
-            cursor: self.cursor,
+            cursor: self.cursor(),
             cells: self
                 .cells
                 .iter()
                 .map(|cell| CellView {
                     label: cell.label.clone(),
                     name: cell.name.clone(),
+                    kind: cell.kind,
                 })
                 .collect(),
             preset: self.preset.clone(),
@@ -259,7 +283,15 @@ impl State {
     }
 
     fn step_cursor(&mut self, now: Instant) {
-        self.cursor = (self.cursor + 1) % self.cells.len();
+        // 선택한 직후에는 첫 이동 칸으로 돌아간다. 고르고 나서 다시 옮기는
+        // 것이 가장 잦은 흐름인데, 이어서 순환하면 그 흐름이 한 바퀴를 돈다.
+        self.position = if self.restart_next {
+            self.restart_next = false;
+            0
+        } else {
+            (self.position + 1) % self.order.len()
+        };
+
         self.entered_at = now;
         self.steps = self.steps.saturating_add(1);
     }
@@ -326,18 +358,20 @@ impl State {
                 };
                 self.steps = 0;
 
-                let command = match self.cells[self.cursor].action.clone() {
+                let command = match self.cells[self.cursor()].action.clone() {
                     Action::Settings => {
                         self.enter(Mode::Dwelling, self.dwell_timeout(), now);
                         Command::OpenSettings
                     }
                     Action::Enter => {
+                        self.restart_next = true;
                         self.enter(Mode::Confirm, CONFIRM_WINDOW, now);
                         Command::Emit(Action::Enter)
                     }
                     action => {
                         // 이동은 반대 방향 칸이 곧 되돌리기이므로 확인 창을 두지 않는다.
                         // 매 이동마다 3초를 기다리게 하면 연속 탐색이 불가능해진다.
+                        self.restart_next = false;
                         self.enter(Mode::Dwelling, self.dwell_timeout(), now);
                         Command::Emit(action)
                     }
@@ -458,7 +492,12 @@ impl Scanner {
         // 칸 수가 달라졌으니 창도 맞춘다. 화면과 실제 칸이 어긋나면 사용자는
         // 보이지 않는 칸을 누르게 된다.
         if let Some(window) = app.get_webview_window("floating") {
-            let _ = window::fit_cells(&window, snapshot.cells.len());
+            let extras = snapshot
+                .cells
+                .iter()
+                .filter(|cell| cell.kind == Kind::Extra)
+                .count();
+            let _ = window::fit_cells(&window, extras);
         }
 
         // 바뀌었다는 사실을 두 감각으로 알린다(PRD 원칙 4).
@@ -645,8 +684,8 @@ mod tests {
     /// 커서를 원하는 칸으로 옮긴다.
     fn move_to(state: &mut State, target: Action, start: Instant) -> Instant {
         let mut now = start;
-        for _ in 0..state.cells.len() {
-            if state.cells[state.cursor].action == target {
+        for _ in 0..state.order.len() {
+            if state.cells[state.cursor()].action == target {
                 return now;
             }
             now += INTERVAL;
@@ -658,8 +697,10 @@ mod tests {
     #[test]
     fn 커서는_스캔_순서를_따른다() {
         let (mut state, mut now) = state();
+        // 이동 칸마다 뒤에 선택이 끼어든다. 옮기고 나서 가장 자주 하는 일이다.
         let order = [
             Action::Next,
+            Action::Enter,
             Action::Prev,
             Action::Enter,
             Action::Settings,
@@ -667,7 +708,7 @@ mod tests {
         ];
 
         for expected in order {
-            assert_eq!(state.cells[state.cursor].action, expected);
+            assert_eq!(state.cells[state.cursor()].action, expected);
             now += INTERVAL;
             state.advance(now);
         }
@@ -750,16 +791,19 @@ mod tests {
     fn 마감_전에는_아무_일도_없다() {
         let (mut state, now) = state();
         assert!(state.advance(now + Duration::from_millis(999)).is_none());
-        assert_eq!(state.cursor, 0);
+        assert_eq!(state.cursor(), 0);
     }
 
     #[test]
-    fn 순환은_주사_간격마다_한_칸씩_움직인다() {
+    fn 순환은_주사_간격마다_한_자리씩_움직인다() {
         let (mut state, now) = state();
+
+        // > → Enter → < 순으로 간다. 이동 칸 뒤에는 언제나 선택이 온다.
+        assert_eq!(state.cells[state.cursor()].action, Action::Next);
         assert!(state.advance(now + INTERVAL).is_some());
-        assert_eq!(state.cursor, 1);
+        assert_eq!(state.cells[state.cursor()].action, Action::Enter);
         assert!(state.advance(now + INTERVAL * 2).is_some());
-        assert_eq!(state.cursor, 2);
+        assert_eq!(state.cells[state.cursor()].action, Action::Prev);
     }
 
     #[test]
@@ -769,7 +813,7 @@ mod tests {
 
         assert_eq!(state.select(now).command, Some(Command::Emit(Action::Next)));
         assert_eq!(state.mode, Mode::Dwelling);
-        assert_eq!(state.cursor, 0);
+        assert_eq!(state.cursor(), 0);
     }
 
     #[test]
@@ -782,7 +826,7 @@ mod tests {
         let now = now + Duration::from_millis(200);
         assert_eq!(state.select(now).command, Some(Command::Emit(Action::Next)));
         assert_eq!(state.mode, Mode::Dwelling);
-        assert_eq!(state.cursor, 0);
+        assert_eq!(state.cursor(), 0);
     }
 
     #[test]
@@ -799,7 +843,8 @@ mod tests {
         );
         assert!(state.advance(now + dwell).is_some());
         assert_eq!(state.mode, Mode::Scanning);
-        assert_eq!(state.cursor, 1);
+        // 이동 칸에 머문 뒤에는 선택이 온다. 옮기고 나서 가장 자주 하는 일이다.
+        assert_eq!(state.cells[state.cursor()].action, Action::Enter);
     }
 
     #[test]
@@ -812,10 +857,14 @@ mod tests {
         let now = now + Duration::from_millis(200);
         state.select(now);
 
-        // 머무름이 끝나면 커서는 바로 옆칸인 '이전으로'에 온다.
-        let now = now + state.dwell_timeout();
+        // 머무름이 끝나면 선택이 한 자리 오고, 그 다음이 '이전으로'다.
+        let mut now = now + state.dwell_timeout();
         state.advance(now);
-        assert_eq!(state.cells[state.cursor].action, Action::Prev);
+        assert_eq!(state.cells[state.cursor()].action, Action::Enter);
+
+        now += INTERVAL;
+        state.advance(now);
+        assert_eq!(state.cells[state.cursor()].action, Action::Prev);
 
         // 한 번 누르면 되돌아간다. 한 바퀴를 기다리지 않는다.
         assert_eq!(state.select(now).command, Some(Command::Emit(Action::Prev)));
@@ -837,6 +886,39 @@ mod tests {
             Some(Command::Undo)
         );
         assert_eq!(state.mode, Mode::Scanning);
+    }
+
+    #[test]
+    fn 선택한_뒤에는_첫_이동_칸부터_다시_시작한다() {
+        let (mut state, now) = state();
+        let now = move_to(&mut state, Action::Enter, now);
+
+        state.select(now);
+        assert_eq!(state.mode, Mode::Confirm);
+
+        // 되돌리기 창 → 머무름 → 그 다음 자리.
+        let now = now + CONFIRM_WINDOW;
+        state.advance(now);
+        let now = now + state.dwell_timeout();
+        state.advance(now);
+
+        // 이어서 순환하지 않고 처음으로 돌아온다. 고르고 나서 다시 옮기는
+        // 것이 가장 잦은 흐름이라, 그 흐름이 한 바퀴를 돌지 않게 한다.
+        assert_eq!(state.cursor(), 0);
+        assert_eq!(state.cells[state.cursor()].action, Action::Next);
+    }
+
+    #[test]
+    fn 이동한_뒤에는_처음으로_돌아가지_않는다() {
+        let (mut state, now) = state();
+        let now = move_to(&mut state, Action::Next, now);
+
+        state.select(now);
+        let now = now + state.dwell_timeout();
+        state.advance(now);
+
+        // 이동은 이어서 순환한다. 다음 자리는 선택이다.
+        assert_eq!(state.cells[state.cursor()].action, Action::Enter);
     }
 
     #[test]
@@ -887,7 +969,7 @@ mod tests {
 
         // 정지 중에는 순환도 실행도 없다.
         assert!(state.advance(now + INTERVAL).is_none());
-        assert_eq!(state.cursor, 0);
+        assert_eq!(state.cursor(), 0);
         assert_eq!(state.select(now + INTERVAL).command, None);
 
         state.toggle_pause(now + INTERVAL);
@@ -953,12 +1035,18 @@ mod tests {
     /// 순서로 눌리게 된다.
     fn press_repeatedly(state: &mut State, mut now: Instant, reaction: Duration, times: usize) {
         for _ in 0..times {
-            now += reaction;
-            state.select(now);
-            if state.mode == Mode::Dwelling {
-                now += state.dwell_timeout();
+            // 반응시간 표본은 순환 중 이동 칸에서만 모인다. 선택 칸에서 누르면
+            // 되돌리기 창이 열리고, 그 다음 누름은 표본이 아니라 '실수'가 된다.
+            while state.mode != Mode::Scanning || state.cells[state.cursor()].kind != Kind::Move {
+                now += INTERVAL;
                 state.advance(now);
             }
+
+            now += reaction;
+            state.select(now);
+
+            now += state.dwell_timeout();
+            state.advance(now);
         }
     }
 

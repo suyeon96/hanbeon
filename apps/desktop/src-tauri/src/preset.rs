@@ -7,7 +7,7 @@
 //! 프리셋은 내장으로만 둔다. 사용자가 키 조합을 직접 편집하는 화면은 스위치
 //! 하나로 조작하기에 너무 복잡하다. 대신 설정에서 통째로 끌 수 있다.
 
-use crate::action::{Action, Cell};
+use crate::action::{Action, Cell, Kind};
 use crate::shortcut;
 
 /// 앱별 칸의 상한.
@@ -91,19 +91,35 @@ pub fn for_bundle(bundle_id: &str) -> Option<&'static Preset> {
 pub fn cells_for(preset: Option<&Preset>) -> Vec<Cell> {
     let mut cells = crate::action::base_cells();
 
-    if let Some(preset) = preset {
-        for extra in preset.extras.iter().take(MAX_EXTRAS) {
-            match shortcut::parse(extra.keys) {
-                Some(parsed) => cells.push(Cell {
-                    label: extra.label.to_string(),
-                    name: extra.name.to_string(),
-                    action: Action::Shortcut(parsed),
-                }),
-                None => eprintln!(
-                    "'{}' 프리셋의 '{}' 칸을 만들지 못했습니다. 키 표기 '{}'를 해석할 수 없습니다.",
-                    preset.name, extra.label, extra.keys
-                ),
+    let Some(preset) = preset else {
+        return cells;
+    };
+
+    // 설정은 언제나 맨 끝이다. 앱별 칸은 그 앞에 끼운다.
+    let settings = cells
+        .iter()
+        .position(|cell| cell.kind == Kind::Settings)
+        .unwrap_or(cells.len());
+
+    let mut at = settings;
+    for extra in preset.extras.iter().take(MAX_EXTRAS) {
+        match shortcut::parse(extra.keys) {
+            Some(parsed) => {
+                cells.insert(
+                    at,
+                    Cell::new(
+                        extra.label,
+                        extra.name,
+                        Kind::Extra,
+                        Action::Shortcut(parsed),
+                    ),
+                );
+                at += 1;
             }
+            None => eprintln!(
+                "'{}' 프리셋의 '{}' 칸을 만들지 못했습니다. 키 표기 '{}'를 해석할 수 없습니다.",
+                preset.name, extra.label, extra.keys
+            ),
         }
     }
 
@@ -123,8 +139,16 @@ mod tests {
     fn pdf_뷰어는_페이지_넘김_두_칸을_붙인다() {
         let cells = cells_for(for_bundle("com.apple.Preview"));
         assert_eq!(cells.len(), 6);
-        assert_eq!(cells[4].label, "다음 장");
-        assert_eq!(cells[5].label, "이전 장");
+        assert_eq!(cells[3].label, "다음 장");
+        assert_eq!(cells[4].label, "이전 장");
+    }
+
+    #[test]
+    fn 앱별_칸을_붙여도_설정이_맨_끝이다() {
+        for bundle in ["com.apple.Preview", "com.apple.Music"] {
+            let cells = cells_for(for_bundle(bundle));
+            assert_eq!(cells.last().map(|cell| cell.kind), Some(Kind::Settings));
+        }
     }
 
     #[test]
@@ -134,11 +158,16 @@ mod tests {
     }
 
     #[test]
-    fn 앞_네_칸은_어떤_프리셋에서도_그대로다() {
+    fn 기본_칸은_어떤_프리셋에서도_같은_순서다() {
         let base = crate::action::base_cells();
         for bundle in ["com.apple.Preview", "com.apple.Music"] {
             let cells = cells_for(for_bundle(bundle));
-            assert_eq!(cells[..4], base[..]);
+            let kept: Vec<_> = cells
+                .iter()
+                .filter(|cell| cell.kind != Kind::Extra)
+                .cloned()
+                .collect();
+            assert_eq!(kept, base);
         }
     }
 

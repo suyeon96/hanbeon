@@ -3,10 +3,16 @@
  * Rust의 `src-tauri/src/action.rs`와 순서·id가 일치해야 한다.
  */
 export const SCAN_ACTIONS = [
-  { id: 'next', label: '>', name: '다음으로', hint: 'Tab' },
-  { id: 'prev', label: '<', name: '이전으로', hint: 'Shift+Tab' },
-  { id: 'enter', label: 'Enter', name: '선택', hint: 'Enter' },
-  { id: 'settings', label: '설정', name: '설정 열기', hint: '설정 화면' },
+  { id: 'next', label: '>', name: '다음으로', hint: 'Tab', kind: 'move' },
+  { id: 'prev', label: '<', name: '이전으로', hint: 'Shift+Tab', kind: 'move' },
+  { id: 'enter', label: 'Enter', name: '선택', hint: 'Enter', kind: 'enter' },
+  {
+    id: 'settings',
+    label: '설정',
+    name: '설정 열기',
+    hint: '설정 화면',
+    kind: 'settings',
+  },
 ] as const
 
 export type ScanActionId = (typeof SCAN_ACTIONS)[number]['id']
@@ -21,20 +27,31 @@ export type ScanActionId = (typeof SCAN_ACTIONS)[number]['id']
  */
 export type ScanMode = 'scanning' | 'dwelling' | 'confirm' | 'paused'
 
+/**
+ * 칸의 갈래. 화면 배치와 생김새가 여기서 갈린다.
+ *
+ * - `move`     포커스를 옮긴다. 왼쪽에 세로로 쌓인다
+ * - `enter`    선택. 오른쪽에 이동 칸 전체 높이로 붙는다
+ * - `extra`    앱별 칸. 구분선 아래에 따로 모인다
+ * - `settings` 설정 열기. 가장 드물게 쓰므로 맨 아래
+ */
+export type ScanCellKind = 'move' | 'enter' | 'extra' | 'settings'
+
 /** 화면에 그리는 칸 하나. 코어가 순서대로 보낸다. */
 export interface ScanCell {
   label: string
   name: string
+  kind: ScanCellKind
 }
 
 /** 코어가 `scan://state`로 보내는 커서 상태. */
 export interface ScanSnapshot {
   cursor: number
   /**
-   * 지금 도는 칸 전체. 앱에 따라 4~7칸이다.
+   * 화면에 그릴 칸 전체.
    *
-   * 앞 4칸은 언제나 같은 순서로 맨 앞에 있다. 사용자는 자리로 동작을
-   * 기억하므로 이 순서가 앱마다 달라지면 익힌 것이 무효가 된다.
+   * 순환 순서와는 다르다 — `Enter`는 칸이 하나지만 이동 칸마다 뒤에 끼어들어
+   * 순환에는 두 번 나온다. `cursor`는 지금 강조할 **칸 번호**다.
    */
   cells: ScanCell[]
   /** 붙어 있는 앱별 프리셋 이름. 없으면 앞 4칸만 돈다. */
