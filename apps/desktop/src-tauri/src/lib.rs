@@ -8,11 +8,15 @@
 mod action;
 mod adapt;
 mod audio;
+mod bridge;
 mod emit;
 mod foreground;
+mod host;
 mod input;
 mod journal;
+mod key;
 mod occlusion;
+mod paths;
 mod preset;
 mod profile;
 mod scan;
@@ -90,7 +94,7 @@ fn save_profile(
         }
     }
 
-    next.save(&app)?;
+    next.save(&paths::config_dir(&app)?)?;
 
     if let Ok(mut profile) = shared.0.lock() {
         *profile = next.clone();
@@ -110,7 +114,7 @@ fn save_profile(
 /// 기록은 지울 수도, 실증 담당자에게 건넬 수도 없다.
 #[tauri::command]
 fn log_directory(app: AppHandle) -> Result<String, String> {
-    journal::directory(&app)
+    paths::log_dir(&app)
         .map(|path| path.display().to_string())
         .ok_or_else(|| "기록 폴더를 찾지 못했습니다.".to_string())
 }
@@ -135,7 +139,13 @@ pub fn run() {
 
             tray::setup(app)?;
 
-            let mut profile = Profile::load(app.handle());
+            let mut profile = match paths::config_dir(app.handle()) {
+                Ok(dir) => Profile::load(&dir),
+                Err(message) => {
+                    eprintln!("{message} 기본값으로 시작합니다.");
+                    Profile::default()
+                }
+            };
             // 검증용 통로. 저장된 설정을 건드리지 않고 시작 간격만 바꿔 끼운다.
             if let Some(interval_ms) = scan::interval_override() {
                 profile.interval_ms = interval_ms;
@@ -168,10 +178,9 @@ pub fn run() {
 
             // 실증 지표는 실측으로만 주장할 수 있고, 그러려면 무엇이 언제
             // 일어났는지가 파일로 남아야 한다(PRD 10절).
-            let journal = if profile.logging {
-                journal::Journal::open(app.handle())
-            } else {
-                journal::Journal::off()
+            let journal = match paths::log_dir(app.handle()) {
+                Some(dir) if profile.logging => journal::Journal::open(&dir),
+                _ => journal::Journal::off(),
             };
             journal.record(journal::Event::Session {
                 phase: "start",
@@ -184,7 +193,8 @@ pub fn run() {
             )));
 
             let profile = Arc::new(Mutex::new(profile));
-            let scanner = Scanner::new(Arc::clone(&profile), audio, journal.clone());
+            let host = bridge::TauriHost::new(app.handle().clone(), audio);
+            let scanner = Scanner::new(Arc::clone(&profile), host, journal.clone());
             let moves = window::MoveWatch::default();
 
             app.manage(SharedProfile(Arc::clone(&profile)));
@@ -194,13 +204,13 @@ pub fn run() {
 
             moves.watch(app.handle().clone(), Arc::clone(&profile));
             foreground::watch(app.handle().clone(), Arc::clone(&profile), scanner.clone());
-            scanner.start(app.handle().clone());
+            scanner.start();
             let registered = input::register(
                 app.handle(),
                 detector,
                 switch_code,
-                move |app, judgement| {
-                    scanner.handle(app, judgement);
+                move |_app, judgement| {
+                    scanner.handle(judgement);
                 },
             );
             journal.record(journal::Event::Switch {
@@ -263,7 +273,8 @@ pub fn run() {
         if let tauri::RunEvent::Exit = event
             && let Some(shared) = app.try_state::<SharedProfile>()
             && let Ok(profile) = shared.0.lock()
-            && let Err(message) = profile.save(app)
+            && let Ok(dir) = paths::config_dir(app)
+            && let Err(message) = profile.save(&dir)
         {
             eprintln!("종료하며 설정을 저장하지 못했습니다. {message}");
         }

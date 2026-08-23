@@ -14,14 +14,13 @@
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufWriter, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Sender};
 use std::thread;
 
 use chrono::{DateTime, Local};
 use serde::Serialize;
 use serde_json::json;
-use tauri::{AppHandle, Manager};
 
 /// 한 줄에 하나씩 남기는 사건.
 ///
@@ -105,8 +104,8 @@ impl Journal {
     }
 
     /// 로그 폴더에 오늘 날짜 파일을 열고 쓰기 스레드를 띄운다.
-    pub fn open(app: &AppHandle) -> Self {
-        let Some(path) = today_path(app) else {
+    pub fn open(log_dir: &Path) -> Self {
+        let Some(path) = today_path(log_dir) else {
             eprintln!("기록 폴더를 찾지 못해 이벤트를 남기지 않습니다.");
             return Self::off();
         };
@@ -173,17 +172,11 @@ fn write_line(writer: &mut BufWriter<File>, event: &Event) -> std::io::Result<()
 }
 
 /// 오늘 날짜의 기록 파일 경로. 폴더가 없으면 만든다.
-fn today_path(app: &AppHandle) -> Option<PathBuf> {
-    let dir = app.path().app_log_dir().ok()?;
-    fs::create_dir_all(&dir).ok()?;
+fn today_path(dir: &Path) -> Option<PathBuf> {
+    fs::create_dir_all(dir).ok()?;
 
     let name = format!("events-{}.jsonl", Local::now().format("%Y-%m-%d"));
     Some(dir.join(name))
-}
-
-/// 사용자에게 보여줄 기록 폴더 위치.
-pub fn directory(app: &AppHandle) -> Option<PathBuf> {
-    app.path().app_log_dir().ok()
 }
 
 #[cfg(test)]

@@ -230,8 +230,15 @@ impl MoveWatch {
                 let moved = match profile.lock() {
                     Ok(mut profile) if profile.window_position != Some(position) => {
                         profile.window_position = Some(position);
-                        if let Err(message) = profile.save(&app) {
-                            eprintln!("창 위치를 저장하지 못했습니다. {message}");
+                        match crate::paths::config_dir(&app) {
+                            Ok(dir) => {
+                                if let Err(message) = profile.save(&dir) {
+                                    eprintln!("창 위치를 저장하지 못했습니다. {message}");
+                                }
+                            }
+                            Err(message) => {
+                                eprintln!("창 위치를 저장하지 못했습니다. {message}");
+                            }
                         }
                         true
                     }

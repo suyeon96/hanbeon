@@ -79,10 +79,7 @@ pub fn watch(app: AppHandle, profile: Arc<Mutex<Profile>>, scanner: Scanner) {
                 .is_some_and(|front| front.pid == std::process::id() as i32);
 
             if !ours {
-                scanner.apply_preset(
-                    &app,
-                    front.as_ref().and_then(|front| front.bundle_id.as_deref()),
-                );
+                scanner.apply_preset(front.as_ref().and_then(|front| front.bundle_id.as_deref()));
             }
 
             let (dim, percent) = profile

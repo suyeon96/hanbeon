@@ -6,8 +6,46 @@
 use enigo::{Direction, Enigo, InputError, Key, Keyboard, Settings};
 
 use crate::action::Action;
+use crate::key::{Key as CoreKey, Modifier};
 use crate::profile::UndoMapping;
 use crate::shortcut::Shortcut;
+
+/// 코어의 키를 enigo가 아는 키로 옮긴다.
+///
+/// 이 함수가 이 모듈에 있는 이유는, 키를 보내는 방법이 플랫폼마다 다르기 때문이다.
+/// 코어는 무엇을 보낼지만 정하고, 어떻게 보낼지는 각 플랫폼의 주입 계층이 정한다.
+fn enigo_key(key: CoreKey) -> Key {
+    match key {
+        CoreKey::PageDown => Key::PageDown,
+        CoreKey::PageUp => Key::PageUp,
+        CoreKey::Home => Key::Home,
+        CoreKey::End => Key::End,
+        CoreKey::Up => Key::UpArrow,
+        CoreKey::Down => Key::DownArrow,
+        CoreKey::Left => Key::LeftArrow,
+        CoreKey::Right => Key::RightArrow,
+        CoreKey::Space => Key::Space,
+        CoreKey::Enter => Key::Return,
+        CoreKey::Tab => Key::Tab,
+        CoreKey::Escape => Key::Escape,
+        CoreKey::MediaPlayPause => Key::MediaPlayPause,
+        CoreKey::MediaNextTrack => Key::MediaNextTrack,
+        CoreKey::MediaPrevTrack => Key::MediaPrevTrack,
+        CoreKey::VolumeUp => Key::VolumeUp,
+        CoreKey::VolumeDown => Key::VolumeDown,
+        CoreKey::VolumeMute => Key::VolumeMute,
+        CoreKey::Char(c) => Key::Unicode(c),
+    }
+}
+
+fn enigo_modifier(modifier: Modifier) -> Key {
+    match modifier {
+        Modifier::Meta => Key::Meta,
+        Modifier::Control => Key::Control,
+        Modifier::Alt => Key::Alt,
+        Modifier::Shift => Key::Shift,
+    }
+}
 
 /// 주입 실패 원인. 사용자에게 그대로 보여줄 수 있는 문구를 담는다.
 #[derive(Debug)]
@@ -15,16 +53,6 @@ pub struct EmitError {
     pub message: String,
     /// 권한 문제로 보이는 경우. 화면에서 해결 방법을 함께 안내한다.
     pub needs_permission: bool,
-}
-
-impl EmitError {
-    /// 키 주입이 아닌 경로(설정 창 열기 등)의 실패를 같은 통로로 흘린다.
-    pub fn from_message(message: String) -> Self {
-        Self {
-            message,
-            needs_permission: false,
-        }
-    }
 }
 
 impl std::fmt::Display for EmitError {
@@ -58,12 +86,12 @@ fn send_shortcut(enigo: &mut Enigo, shortcut: &Shortcut) -> Result<(), InputErro
     let mut result = Ok(());
 
     for modifier in &shortcut.modifiers {
-        result = result.and_then(|_| enigo.key(modifier.key(), Direction::Press));
+        result = result.and_then(|_| enigo.key(enigo_modifier(*modifier), Direction::Press));
     }
-    result = result.and_then(|_| enigo.key(shortcut.key, Direction::Click));
+    result = result.and_then(|_| enigo.key(enigo_key(shortcut.key), Direction::Click));
 
     for modifier in shortcut.modifiers.iter().rev() {
-        let released = enigo.key(modifier.key(), Direction::Release);
+        let released = enigo.key(enigo_modifier(*modifier), Direction::Release);
         if result.is_ok() {
             result = released;
         }
