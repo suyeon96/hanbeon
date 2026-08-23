@@ -5,6 +5,7 @@ import android.util.Log
 import android.view.View
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 
 /**
  * 대상 앱을 실제로 조작하는 쪽.
@@ -73,6 +74,9 @@ class HanbeonAccessibilityService : AccessibilityService() {
         val focused = lastFocused ?: focusedNode() ?: return false
         var node: AccessibilityNodeInfo? = focused
         while (node != null) {
+            // 우리 자신은 누르지 않는다. 컨트롤러의 칸을 눌러 버리면 사용자가
+            // 고르려던 것 대신 우리 UI가 반응하고, 되돌릴 방법이 없다.
+            if (isOurs(node)) return false
             if (node.isClickable) {
                 return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             }
@@ -95,9 +99,9 @@ class HanbeonAccessibilityService : AccessibilityService() {
      * 되돌아가는 것이 `>`의 정확한 역이 된다. 그게 이 제품의 핵심 약속이다.
      */
     private fun move(direction: Int): Boolean {
-        val root = rootInActiveWindow
+        val root = targetRoot()
         if (root == null) {
-            Log.w(TAG, "이동 실패: 활성 창의 노드 트리를 못 읽음")
+            Log.w(TAG, "이동 실패: 조작할 앱의 창을 못 찾음")
             return false
         }
 
@@ -150,13 +154,47 @@ class HanbeonAccessibilityService : AccessibilityService() {
      * 않는 것을 순서에 넣으면 사용자는 아무 일도 일어나지 않는 칸을 만나고,
      * 그 순간 자리로 동작을 기억하는 전제가 깨진다.
      */
+    /**
+     * 조작할 창의 노드 트리.
+     *
+     * `rootInActiveWindow`를 그대로 쓰면 안 된다. 설정 화면을 열거나 컨트롤러를
+     * 만지면 활성 창이 **우리 자신**이 되고, 그러면 우리 앱을 스캔하려다 초점
+     * 가능한 요소가 하나도 없어 이동이 통째로 실패한다. 실기에서 이 상태가
+     * 이어지자 놓침이 쌓여 주사 간격이 1.8초에서 3.5초까지 늘어났다 —
+     * 사용자는 실수한 적이 없는데 앱이 느려진다.
+     *
+     * 데스크톱의 가림 판정에도 '활성 앱이 우리 자신이면 건너뛴다'는 같은 규칙이
+     * 있다. 우리가 앞에 있으면 뒤에 있는 대상 앱 창 중 가장 위의 것을 고른다.
+     */
+    private fun targetRoot(): AccessibilityNodeInfo? {
+        val active = rootInActiveWindow
+        if (active != null && !isOurs(active)) return active
+
+        return windows
+            .asSequence()
+            .filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
+            // 겹쳐 있으면 위에 있는 것이 사용자가 보고 있는 창이다.
+            .sortedByDescending { it.layer }
+            .mapNotNull { it.root }
+            .firstOrNull { !isOurs(it) }
+    }
+
+    /**
+     * 우리 앱의 노드인가.
+     *
+     * `packageName`은 `String`이 아니라 `CharSequence`다. `SpannedString` 같은
+     * 다른 구현체가 오면 `==` 비교가 조용히 거짓이 되어 걸러지지 않는다.
+     */
+    private fun isOurs(node: AccessibilityNodeInfo): Boolean =
+        node.packageName?.toString() == packageName
+
     private fun focusables(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
         val out = mutableListOf<AccessibilityNodeInfo>()
 
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null) return
             // 우리 컨트롤러는 순서에 넣지 않는다. 스캔 대상은 대상 앱이지 우리가 아니다.
-            if (node.packageName == packageName) return
+            if (isOurs(node)) return
 
             val usable =
                 node.isVisibleToUser &&
@@ -172,7 +210,7 @@ class HanbeonAccessibilityService : AccessibilityService() {
     }
 
     private fun focusedNode(): AccessibilityNodeInfo? {
-        val root = rootInActiveWindow ?: return null
+        val root = targetRoot() ?: return null
         return root.findFocus(AccessibilityNodeInfo.FOCUS_ACCESSIBILITY)
             ?: root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
     }
