@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewWindow};
 
-use crate::profile::Profile;
+use hanbeon_core::profile::Profile;
 
 /// 화면 가장자리에서 띄울 여백(논리 px).
 const EDGE_MARGIN: f64 = 24.0;

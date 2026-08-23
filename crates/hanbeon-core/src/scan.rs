@@ -25,9 +25,9 @@ use serde::Serialize;
 
 use crate::action::{Action, Cell, Kind};
 use crate::adapt::{Adapter, Adjustment, Limits, Sample};
-use crate::audio::Cue;
+use crate::cue::Cue;
+use crate::gesture::{Gesture, Judgement};
 use crate::host::{Host, Notice};
-use crate::input::{Gesture, Judgement};
 use crate::journal::{Event, Journal};
 use crate::profile::{Profile, UndoMapping};
 

@@ -2043,6 +2043,7 @@ dependencies = [
  "chrono",
  "core-foundation",
  "enigo",
+ "hanbeon-core",
  "objc2",
  "objc2-app-kit",
  "rodio",
@@ -2052,6 +2053,15 @@ dependencies = [
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",
+]
+
+[[package]]
+name = "hanbeon-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

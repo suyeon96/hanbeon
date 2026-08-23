@@ -53,9 +53,11 @@ apps/desktop/          Tauri 앱 — 이 프로젝트의 본체
     src/host.rs        코어가 플랫폼에 요구하는 것 (트레이트)
     src/bridge.rs      데스크톱의 Host 구현
     src/window.rs      floating 창 배치, non-activating 처리
+apps/android/          안드로이드 앱 (Kotlin, 순수 Gradle)
 apps/front/            랜딩·사용설명서 웹 (Next.js)
 apps/admin/            실증 로그·정량 지표 대시보드 (Next.js)
 apis/api/              사용자 프로필 동기화 API (Rust / vespera / sea-orm)
+crates/hanbeon-core/   플랫폼에 안 매인 코어 — 두 플랫폼이 함께 쓴다
 docs/PRD.md            제품 요구사항
 ```
 
@@ -133,17 +135,18 @@ Next.js는 `output: 'export'`다. 서버 컴포넌트의 데이터 패칭, 라�
 **코어와 플랫폼 사이에는 `Host` 트레이트가 있다.** 스캔 상태기계는 '언제 무엇을
 할지'만 정하고, 그것을 '어떻게 하는지'는 모른다.
 
+코어는 **별도 crate(`crates/hanbeon-core`)** 다. 스캔 상태기계, 간격 적응, 앱별 칸,
+프로필, 기록, 눌림 판정이 여기 있고 두 플랫폼이 같은 코드를 쓴다.
+
 - `host.rs` — 코어가 플랫폼에 요구하는 것(`inject`, `undo`, `open_settings`,
   `fit_cells`, `cue`, `publish`, `save_profile`)
-- `bridge.rs` — 데스크톱 구현. Tauri 이벤트 이름(`scan://state` …)과 페이로드도
-  여기 있다
-- `key.rs` — enigo가 아닌 우리 키 표현. `paths.rs` — 경로 찾기
+- `bridge.rs`(데스크톱) — Tauri 구현. 이벤트 이름(`scan://state` …)과 페이로드도 여기
+- `key.rs` — enigo가 아닌 우리 키 표현. `cue.rs` — 무엇을 알릴지(어떻게 소리 내는지는
+  플랫폼). `gesture.rs` — 짧게/길게 판정
 
-**`scan.rs`·`adapt.rs`·`action.rs`·`preset.rs`·`shortcut.rs`·`profile.rs`·
-`journal.rs`에 `AppHandle`·`enigo`·`tauri`를 다시 들이지 않는다.** 이 선을 넘으면
-안드로이드(PRD 5.5)에서 통째로 다시 짜야 한다. enigo는 안드로이드 타겟 빌드
-자체가 되지 않고, 안드로이드는 다른 앱으로의 키 주입이 OS 정책상 막혀 있어
-접근성 서비스로 포커스를 옮기는 경로밖에 없다.
+**`crates/hanbeon-core`에 `tauri`·`enigo`·`rodio`·`serialport`·`jni`를 들이지
+않는다.** 들이는 순간 반대쪽 플랫폼에서 통째로 못 쓰게 된다. 의존성은 `serde`,
+`serde_json`, `chrono`뿐이고 이 선을 넘을 때는 양쪽 플랫폼에서 빌드되는지 먼저 본다.
 
 플랫폼이 해야 할 일이 늘면 `Host`에 메서드를 더한다. 코어에서 플랫폼 타입을
 직접 부르지 않는다.

@@ -9,12 +9,12 @@ use std::sync::{Arc, Mutex};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::action::Action;
 use crate::audio::{Audio, Cue};
-use crate::host::{Host, HostError, Notice};
-use crate::profile::{Profile, UndoMapping};
 use crate::switch::{Command, Led};
 use crate::{emit, window};
+use hanbeon_core::action::Action;
+use hanbeon_core::host::{Host, HostError, Notice};
+use hanbeon_core::profile::{Profile, UndoMapping};
 
 /// 커서 상태가 바뀔 때마다 프론트로 보내는 이벤트.
 pub const EVENT_STATE: &str = "scan://state";

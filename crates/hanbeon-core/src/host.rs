@@ -10,7 +10,7 @@
 //! 옮긴다'는 결정 자체는 같으므로, 그 결정을 내리는 코드는 한 벌이면 된다.
 
 use crate::action::Action;
-use crate::audio::Cue;
+use crate::cue::Cue;
 use crate::profile::{Profile, UndoMapping};
 use crate::scan::Snapshot;
 

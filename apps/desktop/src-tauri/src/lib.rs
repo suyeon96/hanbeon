@@ -5,22 +5,13 @@
 //! 스위치 입력 판정(짧게/길게)은 대상 앱으로 키를 보내는 지점과 같은 쪽에
 //! 있어야 지연을 예측할 수 있기 때문이다.
 
-mod action;
-mod adapt;
 mod audio;
 mod bridge;
 mod emit;
 mod foreground;
-mod host;
 mod input;
-mod journal;
-mod key;
 mod occlusion;
 mod paths;
-mod preset;
-mod profile;
-mod scan;
-mod shortcut;
 mod switch;
 mod tray;
 mod window;
@@ -32,9 +23,10 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
 use audio::Audio;
-use input::{GestureDetector, SharedDetector};
-use profile::Profile;
-use scan::{Scanner, Snapshot};
+use hanbeon_core::gesture::{GestureDetector, SharedDetector};
+use hanbeon_core::journal;
+use hanbeon_core::profile::Profile;
+use hanbeon_core::scan::{Scanner, Snapshot};
 
 /// 코어가 들고 있는 현재 프로필. 설정 화면과 적응 로직이 함께 쓴다.
 struct SharedProfile(Arc<Mutex<Profile>>);
@@ -161,7 +153,7 @@ pub fn run() {
                 }
             };
             // 검증용 통로. 저장된 설정을 건드리지 않고 시작 간격만 바꿔 끼운다.
-            if let Some(interval_ms) = scan::interval_override() {
+            if let Some(interval_ms) = hanbeon_core::scan::interval_override() {
                 profile.interval_ms = interval_ms;
                 profile.max_interval_ms = profile.max_interval_ms.max(interval_ms);
                 profile.sanitize();

@@ -12,8 +12,8 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::occlusion::{self, MARGIN};
-use crate::profile::Profile;
-use crate::scan::Scanner;
+use hanbeon_core::profile::Profile;
+use hanbeon_core::scan::Scanner;
 
 /// 가림 여부가 바뀔 때만 프론트로 보낸다.
 pub const EVENT_COVER: &str = "window://cover";

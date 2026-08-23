@@ -5,10 +5,10 @@
 
 use enigo::{Direction, Enigo, InputError, Key, Keyboard, Settings};
 
-use crate::action::Action;
-use crate::key::{Key as CoreKey, Modifier};
-use crate::profile::UndoMapping;
-use crate::shortcut::Shortcut;
+use hanbeon_core::action::Action;
+use hanbeon_core::key::{Key as CoreKey, Modifier};
+use hanbeon_core::profile::UndoMapping;
+use hanbeon_core::shortcut::Shortcut;
 
 /// 코어의 키를 enigo가 아는 키로 옮긴다.
 ///
