@@ -78,10 +78,10 @@ fn save_profile(
 ) -> Result<SaveResult, String> {
     next.sanitize();
 
-    let previous_key = shared
+    let (previous_key, was_onboarded) = shared
         .0
         .lock()
-        .map(|profile| profile.switch_key.clone())
+        .map(|profile| (profile.switch_key.clone(), profile.onboarded))
         .map_err(|_| "설정을 읽지 못했습니다.".to_string())?;
 
     // 스위치 키가 바뀌면 먼저 붙여본다. 실패하면 키만 되돌리고 나머지는 살린다.
@@ -103,6 +103,19 @@ fn save_profile(
     scanner.apply_profile();
     if let Ok(mut detector) = detector.lock() {
         detector.set_long_press(Duration::from_millis(next.long_press_ms));
+    }
+
+    // 초기 설정을 마친 순간을 남긴다. 세션 시작과의 차이가 곧 '최초 설정 시간'이다
+    // (PRD 10절, 목표 10분). 사람이 스톱워치를 누르는 시점은 사람마다 달라서,
+    // 10분을 실측으로 주장하려면 기계가 재는 편이 낫다.
+    if !was_onboarded
+        && next.onboarded
+        && let Some(journal) = app.try_state::<journal::Journal>()
+    {
+        journal.record(journal::Event::Session {
+            phase: "onboarded",
+            version: app.package_info().version.to_string(),
+        });
     }
 
     Ok(SaveResult {

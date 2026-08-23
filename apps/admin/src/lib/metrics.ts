@@ -82,6 +82,14 @@ export interface Summary {
   intervalStartMs: number | null
   intervalEndMs: number | null
 
+  /**
+   * 초기 설정 3단계를 마치기까지 걸린 시간(밀리초).
+   *
+   * 세션 시작부터 `session` 이벤트의 `phase: "onboarded"`까지다. 이 세션에서 초기
+   * 설정을 하지 않았으면 `null`이다. PRD 10절의 '최초 설정 시간' 지표가 이 값이다.
+   */
+  onboardingMs: number | null
+
   /** 정지해 있던 시간의 합(밀리초). */
   pausedMs: number
 
@@ -184,6 +192,21 @@ export function reactionSamples(session: Session): number[] {
     .filter((value): value is number => typeof value === 'number')
 }
 
+/**
+ * 초기 설정을 마치기까지 걸린 시간.
+ *
+ * 사람이 스톱워치를 누르는 시점은 사람마다 다르다. 10분이라는 목표를 실측으로
+ * 주장하려면 기계가 잰 값이어야 한다.
+ */
+function onboardingDuration(lines: LogLine[]): number | null {
+  const done = lines.find(
+    (line) => line.event === 'session' && line.phase === 'onboarded',
+  )
+  const start = lines[0]
+  if (!done || !start) return null
+  return done.ms - start.ms
+}
+
 /** 한 세션을 지표로 접는다. */
 export function summarize(session: Session): Summary {
   const { lines } = session
@@ -248,6 +271,7 @@ export function summarize(session: Session): Summary {
       ? Number((cursors.at(-1) as LogLine).intervalMs)
       : null,
 
+    onboardingMs: onboardingDuration(lines),
     pausedMs: pausedDuration(lines),
     presets: presetSpans(lines),
   }

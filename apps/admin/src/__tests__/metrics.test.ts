@@ -158,6 +158,27 @@ describe('summarize', () => {
     expect(summarize(stuck).pausedMs).toBe(500)
   })
 
+  it('초기 설정을 마치기까지 걸린 시간을 잰다', () => {
+    // 사람이 스톱워치를 누르는 시점은 사람마다 다르다. 10분이라는 목표를 실측으로
+    // 주장하려면 기계가 잰 값이어야 한다.
+    const first = splitSessions(
+      parseLog(
+        log(
+          line(0, 'session', { phase: 'start' }),
+          line(1000, 'cursor', { cursor: 0 }),
+          line(240_000, 'session', { phase: 'onboarded' }),
+        ),
+      ),
+    )[0]
+
+    expect(summarize(first).onboardingMs).toBe(240_000)
+  })
+
+  it('초기 설정을 하지 않은 세션은 설정 시간이 없다', () => {
+    // 0으로 적으면 '즉시 마쳤다'로 읽힌다.
+    expect(summarize(session()).onboardingMs).toBeNull()
+  })
+
   it('반응시간 분포를 낸다', () => {
     const reaction = summarize(session()).reaction
     expect(reaction?.count).toBe(2)

@@ -87,6 +87,11 @@ function report(summary: Summary, index: number): string {
     `── 세션 ${index + 1} ${'─'.repeat(40)}`,
     `  ${s.session.startedAt}  →  ${s.session.endedAt}`,
     `  기록 ${seconds(s.durationMs)}${s.session.closed ? '' : ' (정상 종료 기록 없음 — 강제 종료로 보임)'}`,
+    ...(s.onboardingMs === null
+      ? []
+      : [
+          `  최초 설정 ${seconds(s.onboardingMs)}${s.onboardingMs <= 600_000 ? '' : '   ← 목표 10분을 넘겼다'}`,
+        ]),
     '',
     `  선택 실행 ${s.actions}회${s.failedActions ? ` (주입 실패 ${s.failedActions}회)` : ''}`,
     `  되돌리기 ${s.undos}회 · 성공 ${percent(s.undos ? s.succeededUndos / s.undos : null)}`,
