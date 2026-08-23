@@ -83,28 +83,124 @@ class HanbeonAccessibilityService : AccessibilityService() {
             return false
         }
 
+        // 우리 자신은 누르지 않는다. 컨트롤러의 칸을 눌러 버리면 사용자가
+        // 고르려던 것 대신 우리 UI가 반응하고, 되돌릴 방법이 없다.
+        if (isOurs(focused)) {
+            Log.w(TAG, "선택 실패: 우리 앱의 요소라 누르지 않음")
+            return false
+        }
+
+        // 사람이 하듯 그 자리를 실제로 두드린다.
+        //
+        // `ACTION_CLICK`을 먼저 썼다가 실기에서 크게 헤맸다. 웹 콘텐츠에서는
+        // 그것이 **참을 돌려주고도 링크를 열지 않는다.** 로그에는 '선택 됨'이
+        // 찍히는데 화면은 그대로여서, 되는 줄 알고 넘어가기 쉽다.
+        if (tap(focused)) return true
+
+        // 두드릴 수 없을 때만 semantic 액션으로 물러선다. 좌표가 없거나 화면
+        // 밖에 있는 요소가 여기 온다.
         var node: AccessibilityNodeInfo? = focused
         var depth = 0
         while (node != null) {
-            // 우리 자신은 누르지 않는다. 컨트롤러의 칸을 눌러 버리면 사용자가
-            // 고르려던 것 대신 우리 UI가 반응하고, 되돌릴 방법이 없다.
-            if (isOurs(node)) {
-                Log.w(TAG, "선택 실패: 우리 앱의 요소라 누르지 않음")
-                return false
-            }
-            if (node.isClickable) {
-                val ok = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Log.i(TAG, "선택 ${if (ok) "됨" else "거부"} ${describe(node)} (조상 $depth 단계 위)")
-                if (ok) return true
-                // 클릭이 거부되면 더 위에서 받아 줄 수도 있다. 웹뷰에서는
-                // isClickable 이 참인데도 실제로 받지 않는 노드가 흔하다.
+            if (isOurs(node)) break
+            if (node.isClickable && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) {
+                Log.i(TAG, "선택 됨(액션) ${describe(node)} (조상 $depth 단계 위)")
+                return true
             }
             node = node.parent
             depth += 1
         }
 
-        Log.w(TAG, "선택 실패: 누를 수 있는 조상이 없음 ${describe(focused)}")
+        Log.w(TAG, "선택 실패: 누를 수 없음 ${describe(focused)}")
         return false
+    }
+
+    /**
+     * 요소의 한가운데를 실제로 두드린다.
+     *
+     * 화면 밖으로 걸친 요소는 보이는 부분의 한가운데를 잡는다. 요소의 기하학적
+     * 중심이 화면 밖이면 두드려도 아무 데도 닿지 않는다.
+     */
+    private fun tap(node: AccessibilityNodeInfo): Boolean {
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+
+        val screen =
+            android.graphics.Rect(
+                0,
+                0,
+                resources.displayMetrics.widthPixels,
+                resources.displayMetrics.heightPixels,
+            )
+        if (!bounds.intersect(screen)) {
+            Log.w(TAG, "두드리기 건너뜀: 화면 밖 ${describe(node)}")
+            return false
+        }
+
+        val point = tapPoint(bounds) ?: run {
+            Log.w(TAG, "두드리기 건너뜀: 컨트롤러에 완전히 가림 ${describe(node)}")
+            return false
+        }
+
+        val path =
+            android.graphics.Path().apply {
+                moveTo(point.x, point.y)
+            }
+        val gesture =
+            android.accessibilityservice.GestureDescription.Builder()
+                .addStroke(
+                    android.accessibilityservice.GestureDescription.StrokeDescription(
+                        path,
+                        0L,
+                        TAP_MS,
+                    ),
+                )
+                .build()
+
+        val sent = dispatchGesture(gesture, null, null)
+        Log.i(
+            TAG,
+            "두드림 ${if (sent) "보냄" else "실패"} " +
+                "(${point.x.toInt()}, ${point.y.toInt()}) ${describe(node)}",
+        )
+        return sent
+    }
+
+    /**
+     * 어디를 두드릴지 고른다. 가릴 것이 없으면 한가운데다.
+     *
+     * 컨트롤러는 터치를 받는 창이라, 그 위를 두드리면 대상 앱이 아니라 우리에게
+     * 먹혀 아무 일도 일어나지 않는다. 터치를 통과시키면 될 것 같지만 그럴 수
+     * 없다 — 안드로이드 12부터 통과시키는 오버레이는 **불투명도가 강제로
+     * 낮춰져서**(탭재킹 방지) 컨트롤러가 비쳐 보인다. 저시력 사용자에게 대비는
+     * 협상 대상이 아니다.
+     *
+     * 그래서 컨트롤러를 피해서 두드린다. 기사 한 줄처럼 가로로 긴 요소는 왼쪽이
+     * 남고, 세로로 긴 것은 위쪽이 남는다. 둘 다 없으면 두드리지 않는다.
+     */
+    private fun tapPoint(bounds: android.graphics.Rect): android.graphics.PointF? {
+        val panel = controllerBounds
+        if (panel == null || !android.graphics.Rect.intersects(bounds, panel)) {
+            return android.graphics.PointF(bounds.exactCenterX(), bounds.exactCenterY())
+        }
+
+        val leftWidth = panel.left - bounds.left
+        if (leftWidth >= MIN_TAP_PX) {
+            return android.graphics.PointF(
+                bounds.left + leftWidth / 2f,
+                bounds.exactCenterY(),
+            )
+        }
+
+        val aboveHeight = panel.top - bounds.top
+        if (aboveHeight >= MIN_TAP_PX) {
+            return android.graphics.PointF(
+                bounds.exactCenterX(),
+                bounds.top + aboveHeight / 2f,
+            )
+        }
+
+        return null
     }
 
     private fun describe(node: AccessibilityNodeInfo): String {
@@ -136,6 +232,15 @@ class HanbeonAccessibilityService : AccessibilityService() {
 
         val order = focusables(root)
         if (order.isEmpty()) {
+            // 지금 보이는 곳에 고를 것이 하나도 없을 수 있다. 컨트롤러가 화면
+            // 아래쪽을 덮고 있어서 그 위쪽이 그림뿐인 화면이 그렇다. 굴려서
+            // 다음 내용을 드러낸다 — 여기서 물러서면 사용자는 갇힌다.
+            if (scrollPage(root, direction == View.FOCUS_FORWARD)) {
+                Log.i(TAG, "고를 것이 없어 화면을 굴림")
+                lastFocused = null
+                resumeFromEdge = true
+                return true
+            }
             Log.w(TAG, "이동 실패: 초점 가능한 요소가 없음 (root=${root.packageName})")
             return false
         }
@@ -342,18 +447,33 @@ class HanbeonAccessibilityService : AccessibilityService() {
 
     private fun focusables(root: AccessibilityNodeInfo): List<AccessibilityNodeInfo> {
         val out = mutableListOf<AccessibilityNodeInfo>()
+        val screen =
+            android.graphics.Rect(
+                0,
+                0,
+                resources.displayMetrics.widthPixels,
+                resources.displayMetrics.heightPixels,
+            )
+        val bounds = android.graphics.Rect()
 
         fun walk(node: AccessibilityNodeInfo?) {
             if (node == null) return
             // 우리 컨트롤러는 순서에 넣지 않는다. 스캔 대상은 대상 앱이지 우리가 아니다.
             if (isOurs(node)) return
 
+            // 컨트롤러에 가려 두드릴 수 없는 것도 넣지 않는다. 커서가 거기 멈추면
+            // 눌러도 아무 일이 없고, 그 순간 자리로 동작을 기억하는 전제가 깨진다.
+            // 가려진 내용은 목록 끝에서 화면을 굴리면 위로 올라와 닿을 수 있다.
+            node.getBoundsInScreen(bounds)
+            val choosable = bounds.intersect(screen) && tapPoint(bounds) != null
+
             // 굴릴 수 있는 것은 고를 대상이 아니라 **내용을 담는 창**이다. 크롬의
             // 웹뷰가 여기 걸리는데, 거기에 접근성 포커스를 주는 것만으로 크롬이
             // 문서 첫머리로 굴러가 애써 내려온 화면이 통째로 맨 위로 돌아간다.
             // 실기에서 이것 때문에 화면 아래쪽으로 나아가지 못하고 맴돌았다.
             val usable =
-                !node.isScrollable &&
+                choosable &&
+                    !node.isScrollable &&
                     node.isVisibleToUser &&
                     node.isEnabled &&
                     (node.isClickable || node.isFocusable || node.isEditable)
@@ -377,6 +497,16 @@ class HanbeonAccessibilityService : AccessibilityService() {
 
         /** 굴림이 멎기를 기다리는 시간. 좌표를 다시 읽는 데만 쓴다. */
         private const val SCROLL_SETTLE_MS = 350L
+
+        /** 두드리는 시간. 길게 누름으로 읽히지 않을 만큼 짧게 잡는다. */
+        private const val TAP_MS = 60L
+
+        /** 컨트롤러를 피해 두드릴 때 필요한 최소 여백. 이보다 좁으면 빗나간다. */
+        private const val MIN_TAP_PX = 48
+
+        /** 컨트롤러가 화면에서 차지하는 자리. 두드릴 때 피해야 한다. */
+        @Volatile
+        var controllerBounds: android.graphics.Rect? = null
 
         /** 켜져 있으면 그 인스턴스. 꺼져 있으면 `null`. */
         @Volatile

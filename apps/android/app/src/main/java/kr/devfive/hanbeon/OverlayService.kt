@@ -215,6 +215,11 @@ class OverlayService : Service() {
                 // NOT_FOCUSABLE이 이 앱의 생명줄이다. 포커스를 받으면 우리가 옮기려는
                 // 대상 앱의 포커스를 뺏어, 정작 조작할 것이 사라진다. 데스크톱에서
                 // NSPanel과 WS_EX_NOACTIVATE로 애써 만드는 상태가 여기서는 기본이다.
+                //
+                // NOT_TOUCHABLE도 함께 건다. 컨트롤러는 **보여 주기만 한다** —
+                // 조작은 스위치로 한다. 터치를 삼키면 두 가지가 깨진다. 선택할 때
+                // 보내는 실제 두드림이 컨트롤러 뒤에 있는 요소 대신 우리에게
+                // 먹히고, 보호자가 그 자리의 앱을 만질 수 없다.
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
                 PixelFormat.TRANSLUCENT,
@@ -225,6 +230,19 @@ class OverlayService : Service() {
 
         manager.addView(view, params)
         controller = view
+
+        // 컨트롤러가 어디를 덮고 있는지 알린다. 선택할 때 보내는 두드림이 이
+        // 자리에 떨어지면 대상 앱이 아니라 우리에게 먹힌다.
+        view.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            val at = IntArray(2)
+            view.getLocationOnScreen(at)
+            val rect =
+                android.graphics.Rect(at[0], at[1], at[0] + view.width, at[1] + view.height)
+            if (rect != HanbeonAccessibilityService.controllerBounds) {
+                HanbeonAccessibilityService.controllerBounds = rect
+                android.util.Log.i(TAG, "컨트롤러 자리 $rect")
+            }
+        }
     }
 
     /**
@@ -254,6 +272,7 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         HanbeonAccessibilityService.onFocusMoved = null
+        HanbeonAccessibilityService.controllerBounds = null
         highlight?.let { view -> runCatching { windows?.removeView(view) } }
         highlight = null
         usb?.stop()

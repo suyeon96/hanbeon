@@ -5,11 +5,14 @@
   canRetrieveWindowContent: 노드 트리를 읽어야 포커스를 옮길 수 있다.
   TYPE_WINDOW_STATE_CHANGED: 앞에 있는 앱이 바뀐 것을 알아야 앱별 칸을 갈아 낀다.
   flagRetrieveInteractiveWindows: 오버레이 뒤에 있는 대상 앱의 창까지 본다.
+  canPerformGestures: 실제 탭을 보내야 한다. 웹 콘텐츠에서는 ACTION_CLICK 이
+    참을 돌려주고도 링크를 열지 않는다 — 실기에서 확인했다.
 -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault|flagRetrieveInteractiveWindows|flagReportViewIds"
+    android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_description"
     android:notificationTimeout="100" />
