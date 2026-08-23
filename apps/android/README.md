@@ -39,19 +39,56 @@ API로 직접 읽어야 한다. 접근성 서비스는 **출력 전용**이다.
 
 ## 빌드
 
+코어(Rust)를 먼저 만들고 그다음 APK를 만든다.
+
 ```sh
+sh ../../scripts/android/build-core.sh          # .so 를 jniLibs 에 넣는다
+
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
+**NDK 링커 경로를 `<repo>/.cargo/config.toml`에 적어 둬야 한다.** 기기마다 다르므로
+커밋하지 않는다.
+
+```toml
+[target.aarch64-linux-android]
+linker = "<NDK>/toolchains/llvm/prebuilt/darwin-x86_64/bin/aarch64-linux-android26-clang"
+ar = "<NDK>/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-ar"
+```
+
+숫자 26은 `minSdk`와 맞춘다. 오버레이가 API 26부터라 그 아래는 받지 않는다.
+
+`sdkmanager`로 NDK를 받다 `Failed to download package!`가 나면
+[구글에서 직접](https://dl.google.com/android/repository/android-ndk-r28c-darwin.zip)
+받는다. 빈 폴더가 남으면 sdkmanager가 '이미 설치됨'으로 건너뛰므로 지우고 다시 한다.
+
+## 검증할 때
+
+**앱을 새로 깔거나 강제 종료하면 안드로이드가 접근성 서비스를 끈다.** 그러면 스위치는
+눌리는데 화면이 아무 반응도 하지 않는다. 순서가 중요하다 — 앱을 먼저 띄우고 그다음에
+켠다.
+
+```sh
+adb shell am start -n kr.devfive.hanbeon/.MainActivity --ez start_overlay true
+adb shell settings put secure enabled_accessibility_services \
+  kr.devfive.hanbeon/kr.devfive.hanbeon.HanbeonAccessibilityService
+adb shell settings put secure accessibility_enabled 1
+```
+
 ## 지금 있는 것
 
 - `OverlayService` — 포그라운드 서비스가 4칸을 다른 앱 위에 올린다
-- `MainActivity` — 보호자가 권한을 켜 주는 화면
+- `HanbeonAccessibilityService` — 포커스 이동·선택·되돌리기 (출력 전용)
+- `HighlightView` — 고르고 있는 요소에 테두리. 안드로이드가 접근성 포커스를 그려 주지
+  않아서 우리가 그린다
+- `UsbSwitch` — 아두이노 시리얼로 `P`/`R` 수신
+- `Core` — Rust 코어로 가는 통로. 스캔 순서·판정·간격 조정은 전부 코어의 것이다
 
 ## 아직 없는 것
 
-- 접근성 서비스(포커스 이동·선택)
-- USB 시리얼로 스위치 읽기
-- Rust 코어 JNI 연결 — 지금 칸은 껍데기이고 스캔이 돌지 않는다
+- 소리. 화면 강조만으로는 원칙 4(두 감각)를 못 지킨다
+- 앱별 칸의 단축키 실행. 코어는 칸을 만들지만 안드로이드에 보낼 경로가 없다
+- 설정 화면. 지금은 보호자용 권한 화면뿐이다

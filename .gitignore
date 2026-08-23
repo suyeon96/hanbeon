@@ -43,3 +43,6 @@ apps/android/.kotlin/
 
 # NDK 경로는 기기마다 다르다
 .cargo/config.toml
+
+# 코어를 빌드해 넣는 자리. scripts/android/build-core.sh 가 만든다
+apps/android/app/src/main/jniLibs/
