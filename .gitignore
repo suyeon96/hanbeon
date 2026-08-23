@@ -40,3 +40,6 @@ local.properties
 .gradle/
 apps/android/**/build/
 apps/android/.kotlin/
+
+# NDK 경로는 기기마다 다르다
+.cargo/config.toml

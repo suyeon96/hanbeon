@@ -28,13 +28,6 @@ class OverlayService : Service() {
     private var usb: UsbSwitch? = null
     private var highlight: HighlightView? = null
 
-    /**
-     * 눌린 시각. 짧게/길게를 가르는 기준이다.
-     *
-     * 눌리지 않은 상태는 0이다. 시리얼이 조각나 `P`를 놓치고 `R`만 받는 일이
-     * 실제로 있었는데, 그때 이전 값으로 재면 눌림 시간이 엉뚱하게 나온다.
-     */
-    private var pressedAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -42,15 +35,15 @@ class OverlayService : Service() {
         super.onCreate()
         startInForeground()
         show()
+        startCore()
         listenToSwitch()
     }
 
     /**
      * 스위치를 듣는다.
      *
-     * 아직 Rust 코어가 안 붙어서 스캔이 돌지 않는다. 지금은 눌림이 실제로 여기까지
-     * 오는지, 그리고 그것이 대상 앱의 동작으로 이어지는지만 본다. 짧게 누르면 다음
-     * 요소로, 길게 누르면 되돌리기다.
+     * 눌림·뗌을 그대로 코어에 넘긴다. 짧게/길게 판정도, 그래서 무엇을 할지도 코어가
+     * 정한다. 여기서 흉내 내면 데스크톱과 갈라진다.
      */
     private fun listenToSwitch() {
         usb =
@@ -59,31 +52,90 @@ class OverlayService : Service() {
                     is UsbSwitch.Event.Connected ->
                         android.util.Log.i(TAG, "스위치 붙음 ${event.name}")
 
-                    UsbSwitch.Event.Disconnected ->
+                    UsbSwitch.Event.Disconnected -> {
                         android.util.Log.w(TAG, "스위치 빠짐")
-
-                    UsbSwitch.Event.Press -> pressedAt = System.currentTimeMillis()
-
-                    UsbSwitch.Event.Release -> {
-                        if (pressedAt == 0L) {
-                            // 눌림 없이 뗌만 왔다. 무시해야 길게 누름이 오판되지 않는다.
-                            android.util.Log.w(TAG, "눌림 없이 뗌만 옴 — 무시")
-                            return@UsbSwitch
-                        }
-                        val held = System.currentTimeMillis() - pressedAt
-                        pressedAt = 0L
-                        val service = HanbeonAccessibilityService.instance
-                        if (service == null) {
-                            android.util.Log.w(TAG, "접근성 서비스가 꺼져 있습니다")
-                        } else {
-                            val ok =
-                                if (held >= LONG_PRESS_MS) service.back() else service.moveNext()
-                            android.util.Log.i(TAG, "눌림 ${held}ms -> ${if (ok) "됨" else "안 됨"}")
-                        }
+                        Core.switchLost()
                     }
+
+                    UsbSwitch.Event.Press -> Core.pressed()
+
+                    UsbSwitch.Event.Release -> Core.released()
                 }
             }
         usb?.start()
+    }
+
+    /** 코어가 시키는 것을 실제로 한다. */
+    private inner class Bridge : Core.Callbacks {
+        override fun inject(action: Int): Boolean {
+            val service = HanbeonAccessibilityService.instance
+            if (service == null) {
+                android.util.Log.w(TAG, "접근성 서비스가 꺼져 있습니다")
+                return false
+            }
+            return when (action) {
+                0 -> service.moveNext()
+                1 -> service.movePrevious()
+                2 -> service.select()
+                // 설정 화면 열기는 키 주입이 아니라 우리 앱 내부 동작이다.
+                3 -> true
+                else -> false
+            }
+        }
+
+        override fun undo(mapping: Int): Boolean =
+            HanbeonAccessibilityService.instance?.back() ?: false
+
+        override fun openSettings(): Boolean {
+            val intent =
+                Intent(this@OverlayService, MainActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            return true
+        }
+
+        override fun fitCells(extras: Int) {
+            controller?.post { controller?.fitCells(extras) }
+        }
+
+        override fun cue(cue: Int) {
+            // 소리는 아직 없다. 화면 강조만으로는 원칙 4(두 감각)를 못 지킨다.
+        }
+
+        override fun setSound(enabled: Boolean) = Unit
+
+        override fun publishState(json: String) {
+            controller?.post { controller?.render(json) }
+        }
+
+        override fun publishError(json: String) {
+            android.util.Log.w(TAG, "오류 $json")
+        }
+
+        override fun publishInterval(json: String) {
+            android.util.Log.i(TAG, "간격 $json")
+            controller?.post { controller?.notice(json) }
+        }
+
+        override fun publishPreset(json: String) {
+            android.util.Log.i(TAG, "앱별 칸 $json")
+        }
+
+        override fun saveProfile(json: String) {
+            runCatching {
+                java.io.File(filesDir, "profile.json").writeText(json)
+            }
+        }
+    }
+
+    /** 코어를 띄운다. 프로필이 없으면 코어가 기본값으로 시작한다. */
+    private fun startCore() {
+        val profile =
+            runCatching { java.io.File(filesDir, "profile.json").readText() }
+                .getOrDefault("{}")
+        val logs = java.io.File(filesDir, "logs").apply { mkdirs() }
+        val ok = Core.start(Bridge(), profile, logs.absolutePath)
+        android.util.Log.i(TAG, "코어 ${if (ok) "시작됨" else "시작 실패"}")
     }
 
     private fun startInForeground() {
@@ -191,7 +243,6 @@ class OverlayService : Service() {
 
     companion object {
         private const val TAG = "한번"
-        private const val LONG_PRESS_MS = 600L
         private const val CHANNEL = "hanbeon.overlay"
         private const val NOTIFICATION_ID = 1
         private const val MARGIN = 32
