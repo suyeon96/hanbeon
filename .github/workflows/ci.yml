@@ -39,6 +39,30 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+
+      # 데스크톱 crate가 리눅스에서 요구하는 개발 헤더들.
+      # 없으면 cargo가 빌드 스크립트에서 멎어 lint·test가 통째로 죽는다.
+      # GTK/WebKit은 Tauri, alsa는 소리, x11/xdo는 키 주입과 전역 단축키에 쓴다.
+      - name: Install 시스템 의존성
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            libsoup-3.0-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libasound2-dev \
+            libudev-dev \
+            libxdo-dev \
+            libx11-dev \
+            libxi-dev \
+            libxtst-dev \
+            libxkbcommon-dev \
+            libssl-dev \
+            patchelf
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
