@@ -87,6 +87,19 @@ adb shell settings put secure accessibility_enabled 1
 - `UsbSwitch` — 아두이노 시리얼로 `P`/`R` 수신
 - `Core` — Rust 코어로 가는 통로. 스캔 순서·판정·간격 조정은 전부 코어의 것이다
 
+## 실증 기록
+
+코어가 데스크톱과 같은 형식으로 남기므로 **지표 도구를 그대로 쓴다.** 계산이 두
+벌이 되면 안드로이드 숫자와 데스크톱 숫자가 갈린다.
+
+```sh
+adb shell "run-as kr.devfive.hanbeon cat files/logs/events-2026-08-24.jsonl" > events.jsonl
+bun run summary events.jsonl
+```
+
+`run-as`는 디버그 빌드에서만 된다. 기록은 앱 전용 폴더에 있어 기기 밖으로 나가지
+않는다.
+
 ## 아직 없는 것
 
 - 소리. 화면 강조만으로는 원칙 4(두 감각)를 못 지킨다

@@ -186,8 +186,17 @@ class OverlayService : Service() {
             return
         }
 
-        val view = ControllerView(this)
         val manager = getSystemService(WindowManager::class.java)
+        // 창을 하나라도 올리기 전에 잡아 둔다. 컨트롤러를 올리다 실패해도
+        // 먼저 올린 강조 창을 걷어낼 수 있어야 한다.
+        windows = manager
+
+        // 강조 테두리를 먼저 올린다. 나중에 올린 창이 위에 놓이므로, 순서가
+        // 뒤집히면 대상 요소의 테두리가 컨트롤러를 가로질러 그려진다. 사용자가
+        // 커서 위치를 읽는 화면이 가려지면 다음에 무엇이 올지 알 수 없다.
+        showHighlight(manager)
+
+        val view = ControllerView(this)
 
         // 폭을 못 박는다. WRAP_CONTENT로 두면 안쪽 칸의 가중치가 0폭으로 무너져
         // 컨트롤러가 화면 구석의 가는 띠가 되고, `Enter` 같은 글자는 줄바꿈된다.
@@ -215,10 +224,7 @@ class OverlayService : Service() {
         params.y = MARGIN
 
         manager.addView(view, params)
-        windows = manager
         controller = view
-
-        showHighlight(manager)
     }
 
     /**
