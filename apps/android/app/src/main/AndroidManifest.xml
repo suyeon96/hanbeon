@@ -40,5 +40,25 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="스위치 컨트롤러를 화면에 계속 띄워 둔다" />
         </service>
+        <!-- 다른 앱을 조작하는 유일한 합법 경로다. 안드로이드는 앱 사이의
+             키 주입을 막으므로, 포커스를 옮기고 누르는 일을 여기서 한다. -->
+        <service
+            android:name=".HanbeonAccessibilityService"
+            android:exported="true"
+            android:label="한번 스위치 제어"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service" />
+        </service>
+
+        <!-- 검증용 통로. 스캔 상태기계가 아직 안 붙어서 각 동작을 손으로
+             불러 봐야 한다. 코어가 붙으면 뺀다. -->
+        <receiver
+            android:name=".DebugActionReceiver"
+            android:exported="true" />
     </application>
 </manifest>

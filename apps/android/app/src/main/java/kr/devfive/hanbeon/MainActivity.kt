@@ -70,6 +70,13 @@ class MainActivity : Activity() {
         root.addView(status)
 
         setContentView(root)
+
+        // 인텐트로도 켤 수 있게 둔다. 서비스 자체는 exported=false로 잠가 두어야
+        // 아무 앱이나 우리 컨트롤러를 띄울 수 없는데, 그러면 adb로 검증할 길이
+        // 없어진다. 이 통로는 우리 Activity를 거치므로 잠금이 풀리지 않는다.
+        if (intent?.getBooleanExtra(EXTRA_START_OVERLAY, false) == true) {
+            OverlayService.start(this)
+        }
     }
 
     override fun onResume() {
@@ -100,6 +107,10 @@ class MainActivity : Activity() {
                     it.bottomMargin = dp(12)
                 }
         }
+
+    companion object {
+        const val EXTRA_START_OVERLAY = "start_overlay"
+    }
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">스위치로 고른 동작을 화면에 전달합니다. 다음·이전 요소로 옮기고, 선택하고, 되돌립니다.</string>
+</resources>

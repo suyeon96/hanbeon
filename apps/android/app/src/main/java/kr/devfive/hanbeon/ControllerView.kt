@@ -34,8 +34,8 @@ class ControllerView(context: Context) : LinearLayout(context) {
                 orientation = VERTICAL
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             }
-        moves.addView(cell(">", height = 64))
-        moves.addView(cell("<", height = 64, topGap = 8))
+        moves.addView(cell(">", height = 76))
+        moves.addView(cell("<", height = 76, topGap = 10))
 
         val top =
             LinearLayout(context).apply {
@@ -48,15 +48,15 @@ class ControllerView(context: Context) : LinearLayout(context) {
             }
         top.addView(moves)
         top.addView(
-            cell("Enter", height = 136, startGap = 8).apply {
+            cell("Enter", height = 162, startGap = 10).apply {
                 layoutParams =
-                    LinearLayout.LayoutParams(0, pad(136), 1f).also { it.marginStart = pad(8) }
+                    LinearLayout.LayoutParams(0, pad(162), 1f).also { it.marginStart = pad(10) }
             },
         )
 
         addView(top)
         // 설정은 가장 드물게 쓰므로 맨 아래에 낮게 둔다.
-        addView(cell("설정", height = 44, topGap = 8))
+        addView(cell("설정", height = 56, topGap = 10))
     }
 
     private fun cell(
@@ -69,7 +69,7 @@ class ControllerView(context: Context) : LinearLayout(context) {
             text = label
             gravity = Gravity.CENTER
             setTextColor(Color.parseColor("#1B2124"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
             background =
                 GradientDrawable().apply {
                     cornerRadius = pad(14).toFloat()

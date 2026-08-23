@@ -68,9 +68,18 @@ class OverlayService : Service() {
         val view = ControllerView(this)
         val manager = getSystemService(WindowManager::class.java)
 
+        // 폭을 못 박는다. WRAP_CONTENT로 두면 안쪽 칸의 가중치가 0폭으로 무너져
+        // 컨트롤러가 화면 구석의 가는 띠가 되고, `Enter` 같은 글자는 줄바꿈된다.
+        val width =
+            android.util.TypedValue.applyDimension(
+                android.util.TypedValue.COMPLEX_UNIT_DIP,
+                CONTROLLER_WIDTH_DP,
+                resources.displayMetrics,
+            ).toInt()
+
         val params =
             WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                width,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 // NOT_FOCUSABLE이 이 앱의 생명줄이다. 포커스를 받으면 우리가 옮기려는
@@ -99,7 +108,10 @@ class OverlayService : Service() {
     companion object {
         private const val CHANNEL = "hanbeon.overlay"
         private const val NOTIFICATION_ID = 1
-        private const val MARGIN = 24
+        private const val MARGIN = 32
+
+        /// 스위치 사용자는 곁눈으로도 자리를 알아봐야 한다. 화면 폭의 대부분을 쓴다.
+        private const val CONTROLLER_WIDTH_DP = 340f
 
         fun start(context: android.content.Context) {
             val intent = Intent(context, OverlayService::class.java)
