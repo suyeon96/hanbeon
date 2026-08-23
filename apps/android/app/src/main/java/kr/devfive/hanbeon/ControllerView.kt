@@ -29,15 +29,13 @@ class ControllerView(context: Context) : LinearLayout(context) {
     /** 칸 이름 → 그 칸을 그리는 뷰. 커서 위치를 표시할 때 쓴다. */
     private val cells = mutableMapOf<String, TextView>()
 
+    /** 지금 정지 중인가. 조정 이유 표시가 끝난 뒤 무엇으로 돌아갈지 정한다. */
+    private var paused = false
+
     init {
         orientation = VERTICAL
         setPadding(pad(12), pad(12), pad(12), pad(12))
-        background =
-            GradientDrawable().apply {
-                cornerRadius = pad(20).toFloat()
-                setColor(Color.parseColor("#F5F7F7"))
-                setStroke(pad(1), Color.parseColor("#CFD8D8"))
-            }
+        setPaused(false)
 
         moves.orientation = VERTICAL
         moves.layoutParams = LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
@@ -85,12 +83,21 @@ class ControllerView(context: Context) : LinearLayout(context) {
         val list = state.optJSONArray("cells") ?: return
         val cursor = state.optInt("cursor", -1)
 
+        // 정지 중에는 어떤 칸도 커서를 갖지 않는다. 멈춘 채로 한 칸이 강조되어
+        // 있으면 스캔 중과 구분되지 않아, 사용자는 기다려야 할지 눌러야 할지
+        // 알 수 없다. 데스크톱도 같은 규칙이다.
+        val paused = state.optString("mode") == "paused"
+        if (paused != this.paused) {
+            this.paused = paused
+            setPaused(paused)
+        }
+
         rebuildExtras(list)
 
         for (i in 0 until list.length()) {
             val cell = list.optJSONObject(i) ?: continue
             val view = cells[cell.optString("label")] ?: continue
-            val here = i == cursor
+            val here = !paused && i == cursor
             paint(view, here)
             // 커서가 있는 칸에만 이름을 붙인다. 모든 칸에 설명을 달면 글자가 늘어
             // 정작 커서 위치가 묻힌다(PRD F7).
@@ -99,10 +106,37 @@ class ControllerView(context: Context) : LinearLayout(context) {
                 else cell.optString("label")
         }
 
+        if (paused) {
+            // 멈춰 있다는 사실이 조정 이유나 현재 속도보다 앞선다.
+            status.text = "일시정지 — 길게 눌러 다시 시작"
+            status.setTextColor(WARNING)
+            return
+        }
+
         val interval = state.optLong("intervalMs", 0)
         if (interval > 0 && status.tag == null) {
             status.text = "%.1f초마다".format(interval / 1000.0)
+            status.setTextColor(Color.parseColor("#5A6468"))
         }
+    }
+
+    /**
+     * 정지를 색 말고도 알린다(원칙 6).
+     *
+     * 창 테두리를 굵은 경고색으로 바꾼다. 색만으로 알리면 저시력 사용자와
+     * 색각 이상 사용자에게 정지와 스캔이 같은 화면이 된다.
+     */
+    private fun setPaused(paused: Boolean) {
+        background =
+            GradientDrawable().apply {
+                cornerRadius = pad(20).toFloat()
+                setColor(Color.parseColor("#F5F7F7"))
+                if (paused) {
+                    setStroke(pad(5), WARNING)
+                } else {
+                    setStroke(pad(1), Color.parseColor("#CFD8D8"))
+                }
+            }
     }
 
     /** 간격이 바뀐 이유를 6초간 띄운다. 그 뒤에는 현재 속도로 돌아간다(PRD F5). */
@@ -114,7 +148,14 @@ class ControllerView(context: Context) : LinearLayout(context) {
         status.tag = true
         postDelayed({
             status.tag = null
-            status.setTextColor(Color.parseColor("#5A6468"))
+            // 이 사이에 정지로 내려갔으면 정지 안내를 지우지 않는다. 멈춘 것을
+            // 모르게 만드는 쪽이 조정 이유를 놓치는 것보다 나쁘다.
+            if (paused) {
+                status.text = "일시정지 — 길게 눌러 다시 시작"
+                status.setTextColor(WARNING)
+            } else {
+                status.setTextColor(Color.parseColor("#5A6468"))
+            }
         }, NOTICE_MS)
     }
 
@@ -196,5 +237,8 @@ class ControllerView(context: Context) : LinearLayout(context) {
 
         /** 조정 이유를 띄워 두는 시간. 데스크톱과 같다. */
         const val NOTICE_MS = 6000L
+
+        /** 정지를 알리는 색. devup.json 의 light 테마 `$warning` 과 같은 값이다. */
+        val WARNING: Int = Color.parseColor("#A85B00")
     }
 }

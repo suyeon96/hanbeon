@@ -28,6 +28,8 @@ class OverlayService : Service() {
     private var usb: UsbSwitch? = null
     private var highlight: HighlightView? = null
 
+    /** 마지막으로 로그에 남긴 스캔 모드. 바뀔 때만 남기려고 들고 있다. */
+    private var lastMode: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,6 +107,7 @@ class OverlayService : Service() {
         override fun setSound(enabled: Boolean) = Unit
 
         override fun publishState(json: String) {
+            logMode(json)
             controller?.post { controller?.render(json) }
         }
 
@@ -126,6 +129,20 @@ class OverlayService : Service() {
                 java.io.File(filesDir, "profile.json").writeText(json)
             }
         }
+    }
+
+    /**
+     * 스캔 모드가 바뀔 때만 남긴다.
+     *
+     * 커서 위치까지 남기면 주사 간격마다 한 줄씩 쌓여 로그가 못 쓰게 된다. 모드는
+     * 사용자 입력에서만 바뀌므로 드물다. 정지인지 스캔 중인지를 화면만 보고
+     * 구분하지 못해 실기에서 한참 헤맸다.
+     */
+    private fun logMode(json: String) {
+        val mode = runCatching { org.json.JSONObject(json).optString("mode") }.getOrNull() ?: return
+        if (mode == lastMode) return
+        lastMode = mode
+        android.util.Log.i(TAG, "모드 $mode")
     }
 
     /** 코어를 띄운다. 프로필이 없으면 코어가 기본값으로 시작한다. */
