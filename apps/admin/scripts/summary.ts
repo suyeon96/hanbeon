@@ -94,6 +94,8 @@ function report(summary: Summary, index: number): string {
     `  놓침 ${s.missed}회 · ${percent(s.missRate)}   ← 원하는 칸을 지나쳐 한 바퀴 더 기다림`,
     '',
     spread('반응시간', s.reaction),
+    `    머무름 연타 ${s.dwellRepeats}회는 표본에서 뺐다 — 커서를 기다린 것이 아니라`,
+    '    같은 칸을 이어서 다시 누른 것이라 반응시간이 아니다',
     spread('눌림 시간', s.held),
   )
 

@@ -165,6 +165,64 @@ describe('summarize', () => {
     expect(reaction?.maxMs).toBe(800)
   })
 
+  it('비워 둔 반응시간은 표본에 섞지 않는다', () => {
+    // 머무름 연타는 커서를 기다린 것이 아니라 반응시간이 정의되지 않는다.
+    // 코어가 null로 남기는데, 값으로 거르면 Number(null)이 0이 되어 0ms
+    // 표본으로 섞여 들어가고 중앙값을 끌어내린다.
+    const mixed = splitSessions(
+      parseLog(
+        log(
+          line(0, 'session', { phase: 'start' }),
+          line(100, 'action', {
+            cell: '>',
+            action: 'next',
+            reactionMs: 400,
+            mode: 'scanning',
+            steps: 1,
+            cycle: 5,
+            ok: true,
+          }),
+          line(200, 'action', {
+            cell: '>',
+            action: 'next',
+            reactionMs: null,
+            mode: 'dwelling',
+            steps: 0,
+            cycle: 5,
+            ok: true,
+          }),
+        ),
+      ),
+    )[0]
+
+    const summary = summarize(mixed)
+    expect(summary.reaction?.count).toBe(1)
+    expect(summary.reaction?.meanMs).toBe(400)
+    expect(summary.dwellRepeats).toBe(1)
+  })
+
+  it('반응 표본이 하나도 없으면 분포를 내지 않는다', () => {
+    // 머무름 연타만 있는 구간에서 0ms 분포를 내면 '즉각 반응했다'로 읽힌다.
+    const onlyDwell = splitSessions(
+      parseLog(
+        log(
+          line(0, 'session', { phase: 'start' }),
+          line(100, 'action', {
+            cell: '>',
+            action: 'next',
+            reactionMs: null,
+            mode: 'dwelling',
+            steps: 0,
+            cycle: 5,
+            ok: true,
+          }),
+        ),
+      ),
+    )[0]
+
+    expect(summarize(onlyDwell).reaction).toBeNull()
+  })
+
   it('앱별 칸이 붙어 있던 구간을 잰다', () => {
     // 어느 앱에서 얼마나 썼는지를 알아야, 앱별 칸이 실제로 값을 했는지 본다.
     const spans = summarize(

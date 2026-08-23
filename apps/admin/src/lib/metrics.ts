@@ -57,8 +57,21 @@ export interface Summary {
   missed: number
   missRate: number | null
 
-  /** 반응시간 분포(밀리초). 커서가 칸에 들어온 뒤 누르기까지. */
+  /**
+   * 반응시간 분포(밀리초). 커서가 칸에 들어온 뒤 누르기까지.
+   *
+   * 순환 중에 고른 것만 센다. 머무름 연타에는 '커서 진입'이 없어서 반응시간이
+   * 정의되지 않고, 기록에도 비어 있다(PRD F5·10.1).
+   */
   reaction: Distribution | null
+
+  /**
+   * 머무름 연타 횟수 — 같은 칸을 이어서 다시 누른 실행.
+   *
+   * 순환을 기다리지 않고 곧바로 한 번 더 나간 경우다. 이 수가 클수록 PRD 2.1의
+   * 머무름 설계가 실제로 값을 하고 있다는 뜻이다.
+   */
+  dwellRepeats: number
 
   /** 눌림 시간 분포(밀리초). 짧게/길게 임계값을 맞추는 근거다. */
   held: Distribution | null
@@ -158,6 +171,19 @@ function ratio(part: number, whole: number): number | null {
   return whole === 0 ? null : part / whole
 }
 
+/**
+ * 반응시간 표본만 뽑는다.
+ *
+ * 분포를 그리는 쪽이 원본에서 다시 뽑으면 계산이 두 벌이 된다. 실제로 대시보드가
+ * 그렇게 하다가 비워 둔 값을 0ms로 세고 있었다.
+ */
+export function reactionSamples(session: Session): number[] {
+  return session.lines
+    .filter((line) => line.event === 'action')
+    .map((line) => line.reactionMs)
+    .filter((value): value is number => typeof value === 'number')
+}
+
 /** 한 세션을 지표로 접는다. */
 export function summarize(session: Session): Summary {
   const { lines } = session
@@ -175,6 +201,11 @@ export function summarize(session: Session): Summary {
       line.cycle > 0 &&
       line.steps >= line.cycle,
   ).length
+
+  // 머무름 연타. 커서를 기다린 것이 아니라 같은 칸을 반복해 쓴 것이라
+  // 반응시간 표본이 아니다. PRD 2.1의 '연속 이동은 누름 1회 = 이동 1칸'이
+  // 실제로 그런지 보려면 이 수를 따로 세야 한다.
+  const dwellRepeats = actions.filter((line) => line.mode === 'dwelling').length
 
   const intervalChanges = lines
     .filter((line) => line.event === 'interval')
@@ -199,11 +230,11 @@ export function summarize(session: Session): Summary {
     missed,
     missRate: ratio(missed, actions.length),
 
-    reaction: distribution(
-      actions
-        .map((line) => Number(line.reactionMs))
-        .filter((value) => Number.isFinite(value)),
-    ),
+    dwellRepeats,
+
+    // `Number(null)`은 0이고 `Number.isFinite(0)`은 참이다. 값으로 거르면 비워 둔
+    // 반응시간이 0ms 표본으로 섞여 들어가 중앙값을 끌어내린다. 타입으로 거른다.
+    reaction: distribution(reactionSamples(session)),
     held: distribution(
       lines
         .filter((line) => line.event === 'input')

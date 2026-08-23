@@ -11,7 +11,7 @@
 //! - 연결을 확인할 수 있다. `HELLO`에 `HANBEON_UNO_V1`로 답하는 포트만 고른다. 그래서
 //!   '안 누르는 중'과 '뽑혔음'을 구분할 수 있다(PRD F10).
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{Read, Write};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -116,9 +116,29 @@ impl Led {
     }
 }
 
+fn log_enabled() -> bool {
+    std::env::var("HANBEON_LOG").is_ok()
+}
+
 /// `HELLO`에 답하는 포트를 찾는다.
+///
+/// 못 찾는 것은 사용자가 겪는 흔한 실패다. 조용히 넘어가면 "눌러도 아무 일이
+/// 없다"만 남고 원인을 알 수 없으므로, 무엇을 시도했는지 남긴다.
 fn find_port() -> Option<(String, Box<dyn serialport::SerialPort>)> {
-    let ports = serialport::available_ports().ok()?;
+    let ports = match serialport::available_ports() {
+        Ok(ports) => ports,
+        Err(error) => {
+            if log_enabled() {
+                eprintln!("[switch] 포트 목록을 읽지 못했습니다: {error}");
+            }
+            return None;
+        }
+    };
+
+    if log_enabled() {
+        let names: Vec<&str> = ports.iter().map(|p| p.port_name.as_str()).collect();
+        eprintln!("[switch] 포트 {}개: {names:?}", ports.len());
+    }
 
     for info in ports {
         // 맥에서 같은 장치가 tty/cu 두 이름으로 보인다. cu 쪽만 쓴다.
@@ -127,11 +147,17 @@ fn find_port() -> Option<(String, Box<dyn serialport::SerialPort>)> {
             continue;
         }
 
-        let Ok(mut port) = serialport::new(&info.port_name, BAUD)
+        let mut port = match serialport::new(&info.port_name, BAUD)
             .timeout(READ_TIMEOUT)
             .open()
-        else {
-            continue;
+        {
+            Ok(port) => port,
+            Err(error) => {
+                if log_enabled() {
+                    eprintln!("[switch] {} 열지 못함: {error}", info.port_name);
+                }
+                continue;
+            }
         };
 
         if port.write_all(b"HELLO\n").is_err() {
@@ -148,7 +174,11 @@ fn find_port() -> Option<(String, Box<dyn serialport::SerialPort>)> {
                 Ok(0) => {}
                 Ok(n) => {
                     let text = String::from_utf8_lossy(&chunk[..n]).into_owned();
-                    if lines.feed(&text).iter().any(|line| is_ours(line)) {
+                    let got = lines.feed(&text);
+                    if log_enabled() && !got.is_empty() {
+                        eprintln!("[switch] {} 응답: {got:?}", info.port_name);
+                    }
+                    if got.iter().any(|line| is_ours(line)) {
                         return Some((info.port_name, port));
                     }
                 }
@@ -161,10 +191,11 @@ fn find_port() -> Option<(String, Box<dyn serialport::SerialPort>)> {
         }
     }
 
+    if log_enabled() {
+        eprintln!("[switch] 우리 보드를 찾지 못했습니다.");
+    }
     None
 }
-
-use std::io::Read;
 
 /// 스위치를 계속 지켜본다. 뽑히면 다시 찾는다.
 ///
@@ -194,8 +225,12 @@ pub fn watch() -> (Led, Receiver<Event>) {
                     continue;
                 }
             };
-            let mut reader = BufReader::new(port);
-            let mut line = String::new();
+            // `read_line`을 쓰지 않는다. 타임아웃이 줄 중간에 걸리면 그때까지 읽은
+            // 조각이 남는데, 다음 회차에서 버퍼를 비우면 그 눌림이 통째로 사라진다.
+            // 짧은 메시지라 드물지만 잃으면 사용자는 눌러도 반응이 없는 것을 겪는다.
+            let mut reader = port;
+            let mut lines = Lines::default();
+            let mut chunk = [0u8; 256];
 
             loop {
                 // 읽기가 타임아웃될 때마다 밀린 LED 명령을 흘려보낸다.
@@ -206,12 +241,14 @@ pub fn watch() -> (Led, Receiver<Event>) {
                     let _ = writer.flush();
                 }
 
-                line.clear();
-                match reader.read_line(&mut line) {
+                match reader.read(&mut chunk) {
                     Ok(0) => break,
-                    Ok(_) => {
-                        if let Some(signal) = parse_line(&line) {
-                            on_event(Event::Signal(signal));
+                    Ok(n) => {
+                        let text = String::from_utf8_lossy(&chunk[..n]).into_owned();
+                        for line in lines.feed(&text) {
+                            if let Some(signal) = parse_line(&line) {
+                                on_event(Event::Signal(signal));
+                            }
                         }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::TimedOut => continue,

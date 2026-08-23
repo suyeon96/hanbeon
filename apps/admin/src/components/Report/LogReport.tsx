@@ -10,6 +10,7 @@ import {
   histogram,
   intervalTrack,
   parseLog,
+  reactionSamples,
   splitSessions,
   summarize,
   type Summary,
@@ -137,10 +138,9 @@ export function LogReport() {
 }
 
 function SessionView({ summary }: { summary: Summary }) {
-  const reactions = summary.session.lines
-    .filter((line) => line.event === 'action')
-    .map((line) => Number(line.reactionMs))
-    .filter((value) => Number.isFinite(value))
+  // 계산은 metrics.ts 한 곳에 둔다. 여기서 다시 뽑으면 화면의 숫자와 보고서의
+  // 숫자가 갈린다.
+  const reactions = reactionSamples(summary.session)
 
   return (
     <VStack gap="20px">
@@ -200,7 +200,7 @@ function SessionView({ summary }: { summary: Summary }) {
       >
         <Histogram
           bins={histogram(reactions, 1000)}
-          caption="커서가 칸에 들어온 뒤 스위치를 누르기까지. 적응 로직은 이 값의 평균에 300ms를 더한 값을 목표로 삼습니다."
+          caption={`커서가 칸에 들어온 뒤 스위치를 누르기까지. 적응 로직은 이 값의 평균에 300ms를 더한 값을 목표로 삼습니다. 머무름 연타 ${summary.dwellRepeats}회는 커서를 기다린 것이 아니라 표본에서 뺐습니다.`}
           title="반응시간 분포"
         />
       </Box>

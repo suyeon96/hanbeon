@@ -59,7 +59,14 @@ pub enum Event {
     Action {
         cell: String,
         action: String,
-        reaction_ms: u64,
+        /// 커서가 칸에 들어온 뒤 누르기까지. 순환 중에 고른 경우에만 값이 있다.
+        ///
+        /// 머무름 연타에는 '커서 진입'이 없어서 이 값이 정의되지 않는다(PRD F5).
+        /// 0을 적으면 반응이 즉각적이었던 것으로, 누적값을 적으면 한없이 느렸던
+        /// 것으로 읽힌다. 둘 다 사실이 아니므로 비운다.
+        reaction_ms: Option<u64>,
+        /// 누를 때의 모드. 순환 중 선택과 머무름 연타를 갈라 세기 위한 것이다.
+        mode: &'static str,
         steps: u32,
         /// 그때 순환에 있던 자리 수. `steps`가 이 값 이상이면 원하는 칸을
         /// 지나쳐 한 바퀴를 더 기다린 것이다. 자리 수는 앱에 따라 달라지므로
@@ -205,7 +212,8 @@ mod tests {
         let value = line_of(Event::Action {
             cell: ">".into(),
             action: "next".into(),
-            reaction_ms: 420,
+            reaction_ms: Some(420),
+            mode: "scanning",
             steps: 2,
             cycle: 5,
             ok: true,
@@ -213,9 +221,30 @@ mod tests {
         });
 
         assert_eq!(value["reactionMs"], 420);
+        assert_eq!(value["mode"], "scanning");
         assert_eq!(value["steps"], 2);
         assert_eq!(value["cycle"], 5);
         assert_eq!(value["ok"], true);
+    }
+
+    #[test]
+    fn 머무름_연타는_반응시간을_비운다() {
+        // 0으로 적으면 즉각 반응한 것으로, 누적값을 적으면 한없이 느렸던 것으로
+        // 읽힌다. 둘 다 사실이 아니라서 비운다. 읽는 쪽이 이 줄을 반응시간
+        // 표본에서 빼야 한다.
+        let value = line_of(Event::Action {
+            cell: ">".into(),
+            action: "next".into(),
+            reaction_ms: None,
+            mode: "dwelling",
+            steps: 0,
+            cycle: 5,
+            ok: true,
+            error: None,
+        });
+
+        assert!(value["reactionMs"].is_null());
+        assert_eq!(value["mode"], "dwelling");
     }
 
     #[test]

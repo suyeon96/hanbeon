@@ -42,6 +42,10 @@ const DWELL_DIVISOR: u32 = 2;
 /// 상태 확인 주기. 주사 간격 오차 예산(±30ms)보다 충분히 짧다.
 const TICK: Duration = Duration::from_millis(10);
 
+/// 이 바퀴 수를 넘도록 누르지 않으면 그때까지 지나온 자리는 놓침으로 세지 않는다.
+/// 놓침 한 번의 값이 한 바퀴이므로 여유를 한 바퀴 더 준다.
+const IDLE_CYCLES: u32 = 2;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Mode {
@@ -115,13 +119,19 @@ struct Outcome {
     command: Option<Command>,
     adjustment: Option<Adjustment>,
     /// 커서가 그 칸에 들어온 뒤 누르기까지.
-    reaction_ms: u64,
+    ///
+    /// 순환 중에 고른 경우에만 값이 있다. 머무름 연타에는 '커서 진입'이라는 것이
+    /// 없어서 이 값이 정의되지 않는다(PRD F5의 `t_react` 정의). 그 자리에 누적된
+    /// 값을 적으면 반응속도 지표가 통째로 부풀려진다.
+    reaction_ms: Option<u64>,
     /// 지난 선택 이후 커서가 지나온 자리 수.
     steps: u32,
     /// 그때 순환에 있던 자리 수.
     cycle: usize,
     /// 누른 칸의 이름.
     cell: String,
+    /// 누를 때의 모드. 순환 중 선택과 머무름 연타를 나중에 갈라 세기 위한 것이다.
+    mode: &'static str,
 }
 
 struct State {
@@ -149,6 +159,8 @@ struct State {
     /// 마지막 선택 이후 커서가 몇 칸 움직였는지.
     /// 한 바퀴(4칸)를 채웠다면 원하는 칸을 지나쳐 다시 기다린 것이다.
     steps: u32,
+    /// 마지막으로 사용자가 누른 시각. 쉬고 있던 시간을 놓침에서 걸러 내는 데 쓴다.
+    last_input_at: Instant,
     adapter: Adapter,
     limits: Limits,
     adaptation_active: bool,
@@ -172,6 +184,7 @@ impl State {
             phase: interval,
             entered_at: now,
             steps: 0,
+            last_input_at: now,
             adapter: Adapter::default(),
             limits: Limits {
                 min_ms: profile.min_interval_ms,
@@ -287,6 +300,16 @@ impl State {
         };
 
         self.entered_at = now;
+
+        // 놓침은 '원하는 칸을 지나쳐 한 바퀴를 더 기다린 것'이다(PRD 10.1).
+        // 두 바퀴가 넘도록 누르지 않았다면 조작 중이 아니라 쉬고 있는 것이므로
+        // 세지 않는다. 그러지 않으면 앱을 켜 둔 시간이 전부 놓침으로 집계된다.
+        let idle_budget = self.interval * IDLE_CYCLES * self.order.len() as u32;
+        if now.duration_since(self.last_input_at) > idle_budget {
+            self.steps = 0;
+            return;
+        }
+
         self.steps = self.steps.saturating_add(1);
     }
 
@@ -323,10 +346,16 @@ impl State {
 
     /// 짧게 누름. 실행할 부수효과와 간격 조정을 돌려준다.
     fn select(&mut self, now: Instant) -> Outcome {
-        let reaction_ms = now.duration_since(self.entered_at).as_millis() as u64;
+        // 순환 중에 고른 것만 반응시간이 된다. 머무름 연타는 커서가 움직이지
+        // 않아서 `entered_at`이 그대로이고, 그대로 재면 값이 계속 누적된다.
+        let reaction_ms = (self.mode == Mode::Scanning)
+            .then(|| now.duration_since(self.entered_at).as_millis() as u64);
         let steps = self.steps;
         let cycle = self.order.len();
         let cell = self.cells[self.cursor()].label.clone();
+        let mode = self.mode.as_str();
+
+        self.last_input_at = now;
 
         match self.mode {
             // 정지 중에는 어떤 동작도 실행하지 않는다.
@@ -348,6 +377,7 @@ impl State {
                     steps,
                     cycle,
                     cell,
+                    mode,
                 }
             }
 
@@ -387,6 +417,7 @@ impl State {
                     steps,
                     cycle,
                     cell,
+                    mode,
                 }
             }
         }
@@ -407,6 +438,7 @@ impl State {
 
     /// 길게 누름. 정지와 해제를 오간다.
     fn toggle_pause(&mut self, now: Instant) {
+        self.last_input_at = now;
         let next = if self.mode == Mode::Paused {
             Mode::Scanning
         } else {
@@ -680,6 +712,7 @@ impl Scanner {
                     cell: outcome.cell,
                     action: name,
                     reaction_ms: outcome.reaction_ms,
+                    mode: outcome.mode,
                     steps: outcome.steps,
                     cycle: outcome.cycle,
                     ok: failure.is_none(),
@@ -797,6 +830,86 @@ mod tests {
     fn state() -> (State, Instant) {
         let now = Instant::now();
         (State::new(&fixed_profile(), now), now)
+    }
+
+    #[test]
+    fn 순환_중_선택은_반응시간을_남긴다() {
+        let (mut state, now) = state();
+        let now = move_to(&mut state, Action::Next, now);
+
+        // 커서가 칸에 들어오고 300ms 뒤에 누른다.
+        let outcome = state.select(now + Duration::from_millis(300));
+
+        assert_eq!(outcome.mode, "scanning");
+        assert_eq!(outcome.reaction_ms, Some(300));
+    }
+
+    #[test]
+    fn 머무름_연타는_반응시간을_남기지_않는다() {
+        // 머무름 중에는 커서가 움직이지 않아 `entered_at`이 그대로다. 그대로 재면
+        // 값이 계속 누적되어 반응속도 지표가 통째로 부풀려진다.
+        let (mut state, now) = state();
+        let now = move_to(&mut state, Action::Next, now);
+
+        state.select(now);
+        assert_eq!(state.mode, Mode::Dwelling);
+
+        let first = state.select(now + Duration::from_millis(400));
+        let second = state.select(now + Duration::from_millis(800));
+
+        assert_eq!(first.mode, "dwelling");
+        assert_eq!(first.reaction_ms, None);
+        assert_eq!(second.reaction_ms, None);
+    }
+
+    #[test]
+    fn 한_바퀴를_지나치면_놓침으로_남는다() {
+        let (mut state, mut now) = state();
+
+        // 누르지 않고 한 바퀴를 돌되, 쉬고 있다고 볼 만큼은 아니다.
+        for _ in 0..state.order.len() {
+            now += INTERVAL;
+            state.advance(now);
+        }
+
+        let outcome = state.select(now);
+        assert!(outcome.steps >= outcome.cycle as u32);
+    }
+
+    #[test]
+    fn 오래_쉬면_지나온_자리를_놓침으로_세지_않는다() {
+        // 앱을 켜 두고 조작하지 않은 시간이 전부 놓침으로 집계되던 문제.
+        let (mut state, mut now) = state();
+
+        let idle = INTERVAL * IDLE_CYCLES * state.order.len() as u32;
+        let long_idle = now + idle + INTERVAL * 3;
+        while now < long_idle {
+            now += INTERVAL;
+            state.advance(now);
+        }
+
+        let outcome = state.select(now);
+        assert!(
+            (outcome.steps as usize) < outcome.cycle,
+            "쉬고 있던 시간이 놓침으로 잡혔다 (steps={}, cycle={})",
+            outcome.steps,
+            outcome.cycle
+        );
+    }
+
+    #[test]
+    fn 정지_중에는_지나온_자리가_늘지_않는다() {
+        let (mut state, mut now) = state();
+        state.toggle_pause(now);
+        assert_eq!(state.mode, Mode::Paused);
+
+        let before = state.steps;
+        for _ in 0..10 {
+            now += INTERVAL;
+            state.advance(now);
+        }
+
+        assert_eq!(state.steps, before);
     }
 
     /// 커서를 원하는 칸으로 옮긴다.
