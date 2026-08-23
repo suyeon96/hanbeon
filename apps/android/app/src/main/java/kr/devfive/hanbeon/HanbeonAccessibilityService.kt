@@ -127,7 +127,14 @@ class HanbeonAccessibilityService : AccessibilityService() {
 
         val target = order[next]
         val ok = target.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
-        if (ok) lastFocused = target
+        if (ok) {
+            lastFocused = target
+            // 안드로이드는 접근성 포커스를 눈에 보이게 그려 주지 않는다.
+            // 어디가 골라져 있는지 사용자가 봐야 하므로 우리가 그린다(PRD F7).
+            val bounds = android.graphics.Rect()
+            target.getBoundsInScreen(bounds)
+            onFocusMoved?.invoke(bounds)
+        }
         Log.i(
             TAG,
             "이동 ${if (ok) "됨" else "거부"} ${at}->${next}/${order.size} " +
@@ -182,5 +189,9 @@ class HanbeonAccessibilityService : AccessibilityService() {
         @Volatile
         var foreground: String? = null
             private set
+
+        /** 포커스가 옮겨 갈 때마다 그 화면 좌표를 받는다. 테두리를 그리는 쪽이 쓴다. */
+        @Volatile
+        var onFocusMoved: ((android.graphics.Rect) -> Unit)? = null
     }
 }

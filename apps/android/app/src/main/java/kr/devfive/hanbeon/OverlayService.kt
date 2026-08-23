@@ -25,6 +25,16 @@ import android.view.WindowManager
 class OverlayService : Service() {
     private var windows: WindowManager? = null
     private var controller: ControllerView? = null
+    private var usb: UsbSwitch? = null
+    private var highlight: HighlightView? = null
+
+    /**
+     * 눌린 시각. 짧게/길게를 가르는 기준이다.
+     *
+     * 눌리지 않은 상태는 0이다. 시리얼이 조각나 `P`를 놓치고 `R`만 받는 일이
+     * 실제로 있었는데, 그때 이전 값으로 재면 눌림 시간이 엉뚱하게 나온다.
+     */
+    private var pressedAt = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -32,6 +42,48 @@ class OverlayService : Service() {
         super.onCreate()
         startInForeground()
         show()
+        listenToSwitch()
+    }
+
+    /**
+     * 스위치를 듣는다.
+     *
+     * 아직 Rust 코어가 안 붙어서 스캔이 돌지 않는다. 지금은 눌림이 실제로 여기까지
+     * 오는지, 그리고 그것이 대상 앱의 동작으로 이어지는지만 본다. 짧게 누르면 다음
+     * 요소로, 길게 누르면 되돌리기다.
+     */
+    private fun listenToSwitch() {
+        usb =
+            UsbSwitch(this) { event ->
+                when (event) {
+                    is UsbSwitch.Event.Connected ->
+                        android.util.Log.i(TAG, "스위치 붙음 ${event.name}")
+
+                    UsbSwitch.Event.Disconnected ->
+                        android.util.Log.w(TAG, "스위치 빠짐")
+
+                    UsbSwitch.Event.Press -> pressedAt = System.currentTimeMillis()
+
+                    UsbSwitch.Event.Release -> {
+                        if (pressedAt == 0L) {
+                            // 눌림 없이 뗌만 왔다. 무시해야 길게 누름이 오판되지 않는다.
+                            android.util.Log.w(TAG, "눌림 없이 뗌만 옴 — 무시")
+                            return@UsbSwitch
+                        }
+                        val held = System.currentTimeMillis() - pressedAt
+                        pressedAt = 0L
+                        val service = HanbeonAccessibilityService.instance
+                        if (service == null) {
+                            android.util.Log.w(TAG, "접근성 서비스가 꺼져 있습니다")
+                        } else {
+                            val ok =
+                                if (held >= LONG_PRESS_MS) service.back() else service.moveNext()
+                            android.util.Log.i(TAG, "눌림 ${held}ms -> ${if (ok) "됨" else "안 됨"}")
+                        }
+                    }
+                }
+            }
+        usb?.start()
     }
 
     private fun startInForeground() {
@@ -96,9 +148,41 @@ class OverlayService : Service() {
         manager.addView(view, params)
         windows = manager
         controller = view
+
+        showHighlight(manager)
+    }
+
+    /**
+     * 고르고 있는 요소에 테두리를 그릴 창.
+     *
+     * 화면 전체를 덮되 **터치를 통과시킨다**(`FLAG_NOT_TOUCHABLE`). 안 그러면 이
+     * 창이 대상 앱의 터치를 모두 삼켜서, 보호자가 화면을 만질 수 없게 된다.
+     */
+    private fun showHighlight(manager: WindowManager) {
+        val view = HighlightView(this)
+        val params =
+            WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT,
+            )
+        manager.addView(view, params)
+        highlight = view
+
+        HanbeonAccessibilityService.onFocusMoved = { bounds -> view.show(bounds) }
     }
 
     override fun onDestroy() {
+        HanbeonAccessibilityService.onFocusMoved = null
+        highlight?.let { view -> runCatching { windows?.removeView(view) } }
+        highlight = null
+        usb?.stop()
+        usb = null
         controller?.let { view -> runCatching { windows?.removeView(view) } }
         controller = null
         windows = null
@@ -106,6 +190,8 @@ class OverlayService : Service() {
     }
 
     companion object {
+        private const val TAG = "한번"
+        private const val LONG_PRESS_MS = 600L
         private const val CHANNEL = "hanbeon.overlay"
         private const val NOTIFICATION_ID = 1
         private const val MARGIN = 32
