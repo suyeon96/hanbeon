@@ -45,6 +45,16 @@ class HighlightView(context: Context) : View(context) {
     override fun onDraw(canvas: Canvas) {
         val rect = target ?: return
         val radius = dp(6f)
+
+        // `getBoundsInScreen()`은 화면 절대 좌표(상태바 포함)로 온다. 그런데 이 뷰의
+        // 원점은 창에 걸린 인셋만큼 밀려 있을 수 있어서, 그대로 그리면 그 높이만큼
+        // 어긋난다. 실제로 상태바 높이만큼 아래에 그려졌다.
+        //
+        // 인셋이 무엇 때문인지 짐작하지 않고 뷰에게 자기 위치를 물어 보정한다.
+        val origin = IntArray(2)
+        getLocationOnScreen(origin)
+        canvas.save()
+        canvas.translate(-origin[0].toFloat(), -origin[1].toFloat())
         canvas.drawRoundRect(
             rect.left.toFloat(),
             rect.top.toFloat(),
@@ -63,6 +73,7 @@ class HighlightView(context: Context) : View(context) {
             radius,
             border,
         )
+        canvas.restore()
     }
 
     private fun dp(value: Float): Float =
