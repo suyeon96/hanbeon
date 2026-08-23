@@ -17,7 +17,7 @@ import sys
 
 # [   12345.678901] /dev/input/event9 EV_KEY       KEY_SPACE            DOWN
 LINE = re.compile(
-    r"\[\s*(\d+\.\d+)\]\s+(/dev/input/event\d+)\s+EV_KEY\s+(\S+)\s+"
+    r"\[\s*(\d+\.\d+)\]\s+(/dev/input/event\d+):?\s+EV_KEY\s+(\S+)\s+"
     r"(DOWN_REPEAT|DOWN|UP)\b"
 )
 
@@ -106,13 +106,15 @@ def report(events, names):
     return True
 
 
+# 갤럭시 A15에서 실제로 받은 출력 형식이다. 경로 뒤에 콜론이 붙는다.
+# 이걸 지어내면 자체 검증이 통과하면서도 실물을 못 읽는다. 실제로 그랬다.
 SAMPLE = """\
-[   91.100000] /dev/input/event9 EV_KEY       KEY_F13              DOWN
-[   91.100100] /dev/input/event9 EV_SYN       SYN_REPORT           00000000
-[   91.350000] /dev/input/event9 EV_KEY       KEY_F13              UP
-[   92.000000] /dev/input/event9 EV_KEY       KEY_F13              DOWN
-[   92.900000] /dev/input/event9 EV_KEY       KEY_F13              DOWN_REPEAT
-[   93.000000] /dev/input/event9 EV_KEY       KEY_F13              UP
+[   10298.697374] /dev/input/event4: EV_KEY       BTN_TOUCH            DOWN
+[   10298.700000] /dev/input/event4: EV_SYN       SYN_REPORT           00000000
+[   10298.947374] /dev/input/event4: EV_KEY       BTN_TOUCH            UP
+[   10302.041867] /dev/input/event9: EV_KEY       KEY_VOLUMEUP         DOWN
+[   10302.941867] /dev/input/event9: EV_KEY       KEY_VOLUMEUP         DOWN_REPEAT
+[   10303.041867] /dev/input/event9: EV_KEY       KEY_VOLUMEUP         UP
 """
 
 
@@ -122,11 +124,13 @@ def selftest():
     holds = pair_holds(events)
     assert len(holds) == 2, holds
     assert abs(holds[0][2] - 250) < 1, holds[0]
+    assert holds[0][1] == "BTN_TOUCH", holds[0]
     assert abs(holds[1][2] - 1000) < 1, holds[1]
-    assert holds[0][1] == "KEY_F13"
+    assert holds[1][1] == "KEY_VOLUMEUP", holds[1]
     assert [e[3] for e in events].count("DOWN_REPEAT") == 1, events
-    print("파싱 자체 검증 통과 (눌림 250ms / 1000ms, 리피트 1회 인식)")
-    report(events, {"/dev/input/event9": "가상 스위치"})
+    print("파싱 자체 검증 통과 (눌림 250ms / 1000ms, 리피트 1회 인식)\n")
+    report(events, {"/dev/input/event4": "sec_touchscreen",
+                    "/dev/input/event9": "USB Headphone Set"})
 
 
 if __name__ == "__main__":
@@ -138,4 +142,18 @@ if __name__ == "__main__":
         print(f"{seconds}초 동안 스위치를 여러 번 눌러 주세요. "
               f"짧게 몇 번, 길게 몇 번 섞어 주시면 좋습니다.\n")
         text = capture(serial, seconds)
-        report(parse(text), device_names(serial))
+        events = parse(text)
+        if not events:
+            # '이벤트가 안 왔다'와 '형식이 달라 못 읽었다'는 완전히 다른 문제다.
+            # 예전에 경로 뒤 콜론을 안 보고 있다가 실물을 통째로 놓친 적이 있다.
+            raw = len(text.splitlines())
+            keyish = sum(1 for line in text.splitlines() if "EV_KEY" in line)
+            print(f"(원본 {raw}줄, 그중 EV_KEY로 보이는 줄 {keyish}개)")
+            if keyish:
+                print("EV_KEY 줄은 있는데 해석하지 못했습니다. 출력 형식이 바뀐 것으로")
+                print("보이니 이 스크립트의 정규식을 고쳐야 합니다.")
+                for line in text.splitlines():
+                    if "EV_KEY" in line:
+                        print(f"  예: {line.strip()}")
+                        break
+        report(events, device_names(serial))
