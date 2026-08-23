@@ -1,5 +1,5 @@
 [test]
-preload = ["bun-test-env-dom", "@devup-ui/bun-plugin"]
+preload = ["@devup-ui/bun-plugin", "bun-test-env-dom"]
 coverage = true
 coverageSkipTestFiles = true
 coverageThreshold = 1
