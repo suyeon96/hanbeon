@@ -50,6 +50,8 @@ apps/desktop/          Tauri 앱 — 이 프로젝트의 본체
     app/settings/      설정 창
   src-tauri/           Rust 코어
     src/lib.rs         엔트리, Tauri 커맨드
+    src/host.rs        코어가 플랫폼에 요구하는 것 (트레이트)
+    src/bridge.rs      데스크톱의 Host 구현
     src/window.rs      floating 창 배치, non-activating 처리
 apps/front/            랜딩·사용설명서 웹 (Next.js)
 apps/admin/            실증 로그·정량 지표 대시보드 (Next.js)
@@ -127,6 +129,24 @@ Next.js는 `output: 'export'`다. 서버 컴포넌트의 데이터 패칭, 라�
 **스캔 상태기계·입력 판정·키 주입은 Rust에 둔다.** 프론트는 코어가 emit한 상태를
 그리기만 한다. 주사 간격이 렌더링 지연에 흔들리면 안 되고, 스위치 눌림 시간 판정과
 키 주입이 같은 쪽에 있어야 지연을 예측할 수 있기 때문이다.
+
+**코어와 플랫폼 사이에는 `Host` 트레이트가 있다.** 스캔 상태기계는 '언제 무엇을
+할지'만 정하고, 그것을 '어떻게 하는지'는 모른다.
+
+- `host.rs` — 코어가 플랫폼에 요구하는 것(`inject`, `undo`, `open_settings`,
+  `fit_cells`, `cue`, `publish`, `save_profile`)
+- `bridge.rs` — 데스크톱 구현. Tauri 이벤트 이름(`scan://state` …)과 페이로드도
+  여기 있다
+- `key.rs` — enigo가 아닌 우리 키 표현. `paths.rs` — 경로 찾기
+
+**`scan.rs`·`adapt.rs`·`action.rs`·`preset.rs`·`shortcut.rs`·`profile.rs`·
+`journal.rs`에 `AppHandle`·`enigo`·`tauri`를 다시 들이지 않는다.** 이 선을 넘으면
+안드로이드(PRD 5.5)에서 통째로 다시 짜야 한다. enigo는 안드로이드 타겟 빌드
+자체가 되지 않고, 안드로이드는 다른 앱으로의 키 주입이 OS 정책상 막혀 있어
+접근성 서비스로 포커스를 옮기는 경로밖에 없다.
+
+플랫폼이 해야 할 일이 늘면 `Host`에 메서드를 더한다. 코어에서 플랫폼 타입을
+직접 부르지 않는다.
 
 - 새 crate는 반드시 `cargo add`로 추가한다. 버전을 손으로 적어 넣지 않는다.
 - Tauri 커맨드는 `Result<T, String>`을 반환하고, 에러 문구는 한국어로 사용자에게

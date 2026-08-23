@@ -121,7 +121,7 @@ PC·태블릿 사용. 경수 손상으로 손가락 미세 조작은 어렵지�
   띄워 준다고 전제한다(아래 5.4).
 - 사용자가 직접 만드는 앱별 칸(내장 프리셋만 제공) — M4 이후
 - 마우스 포인터를 쓰는 명령 세트(위·아래·좌·우) — M4 이후
-- Android(AccessibilityService + 오버레이), Linux
+- Android(AccessibilityService + 오버레이) — M5, 아래 5.5. Linux
 - 프로필 서버 동기화 (`apis/api`는 뼈대만 유지)
 - 문자 입력(온스크린 키보드), 마우스 포인터 제어
 - 예측 입력·단어 완성
@@ -133,7 +133,7 @@ PC·태블릿 사용. 경수 손상으로 손가락 미세 조작은 어렵지�
 | macOS         | 가능 (NSPanel)    | 가능 (접근성 권한) | ○ | 손쉬운 사용 권한 필수                        |
 | Windows       | 가능 (WS_EX_NOACTIVATE) | 가능 (SendInput) | ○ | 관리자 권한 앱 제어는 제한                |
 | iOS / iPadOS  | **불가**          | **불가**     | ×    | OS 정책. 아래 참조                              |
-| Android       | 가능 (오버레이 권한) | 가능 (AccessibilityService) | × | M5 이후 |
+| Android       | 가능 (오버레이 권한) | 주입 불가, AccessibilityService로 대체 | × | M5. 5.5 참조 |
 | Linux (X11)   | 가능              | 가능         | ×    | Wayland는 제약이 큼                             |
 
 **iOS·iPadOS는 구조적으로 불가능하다.** 서드파티 앱은 시스템 전역 오버레이를
@@ -161,6 +161,48 @@ PC·태블릿 사용. 경수 손상으로 손가락 미세 조작은 어렵지�
 
 M4 이후에 자주 쓰는 앱을 바로 여는 칸을 검토한다. 지금 넣지 않는 이유는, 그것이
 '앱 목록을 스캔한다'는 또 하나의 순환을 만들어 4칸 구조와 부딪히기 때문이다.
+
+### 5.5 안드로이드 (M5)
+
+안드로이드는 데스크톱 코드를 다시 컴파일하는 것으로 되지 않는다. 이 제품의
+핵심 동작 두 가지가 OS 정책상 전혀 다른 경로를 타기 때문이다.
+
+**키를 주입할 수 없다.** 안드로이드는 다른 앱으로의 키 이벤트 주입을 막는다.
+`Instrumentation.sendKeyDownUpSync`는 자기 앱 안에서만 동작한다. 허용된 경로는
+**AccessibilityService** 하나뿐이고, 거기서는 키를 보내는 대신 접근성 포커스를
+노드 트리에서 옮긴다. 그래서 `>`는 `Tab`이 아니라
+`AccessibilityNodeInfo.focusSearch(FOCUS_FORWARD)`가 된다.
+
+**floating 창을 앱이 띄울 수 없다.** 오버레이는 `SYSTEM_ALERT_WINDOW` 권한을
+받은 포그라운드 Service가 `TYPE_APPLICATION_OVERLAY` 창을 올려야 한다. Tauri의
+안드로이드 지원은 Activity를 주지 오버레이 창을 주지 않는다.
+
+| 데스크톱 | 안드로이드 |
+| --- | --- |
+| `Tab` / `Shift+Tab` 주입 | `focusSearch(FOCUS_FORWARD / FOCUS_BACKWARD)` |
+| `Enter` 주입 | `AccessibilityNodeInfo.performAction(ACTION_CLICK)` |
+| 되돌리기 단축키 | `performGlobalAction(GLOBAL_ACTION_BACK)` |
+| 전역 단축키로 스위치 수신 | `AccessibilityService.onKeyEvent()` |
+| 포그라운드 앱 감시(300ms 폴링) | `onAccessibilityEvent(TYPE_WINDOW_STATE_CHANGED)` |
+| non-activating 창 | 오버레이는 애초에 포커스를 받지 않는다 |
+| 접근성 API로 가림 판정 | `AccessibilityNodeInfo.getBoundsInScreen()` |
+
+스위치 입력, 동작 실행, 앱 전환 감지가 모두 같은 AccessibilityService로 들어온다.
+데스크톱에서 세 모듈로 나뉘어 있던 것이 안드로이드에서는 한 곳에 모인다.
+
+**나누는 선은 `Host` 트레이트다.** 스캔 상태기계, 간격 적응, 프리셋, 프로필,
+이벤트 기록은 플랫폼을 모른다. 이 부분(약 2400줄)은 두 플랫폼이 같은 코드를 쓴다.
+같은 코드를 쓰는 이유는 손이 덜 가서가 아니라, 주사 간격과 눌림 판정이 플랫폼마다
+미묘하게 달라지면 사용자가 기기를 옮길 때마다 타이밍을 다시 익혀야 하기 때문이다.
+
+안드로이드 쪽 껍데기는 Kotlin으로 쓰고, 코어는 `cdylib`으로 빌드해 JNI로 붙인다.
+
+**아직 정하지 않은 것**
+
+- 안드로이드 내장 '스위치 제어'(Switch Access)와 어떻게 공존할 것인가. 둘 다 켜면
+  스위치 한 번에 두 곳이 반응한다.
+- 노드 트리에 포커스 가능한 요소가 없는 화면에서 `>`가 무엇을 해야 하는가.
+- 오버레이 위치를 사용자가 옮기는 방법. 데스크톱의 드래그 손잡이가 그대로 되는지.
 
 ## 6. 아키텍처
 
@@ -542,6 +584,7 @@ M4 이후에 자주 쓰는 앱을 바로 여는 칸을 검토한다. 지금 넣�
 | M2   | 스캔 상태기계(SCANNING·DWELLING·CONFIRM·PAUSED), 시각·청각 피드백    | 지나친 요소로 `<`를 눌러 되돌아갈 수 있다 ✅ (macOS 검증 완료) |
 | M3   | 설정 화면, 프로필 저장, 적응 로직, 스위치 테스트                     | 신규 사용자가 3단계로 설정을 마친다 ✅ (적응·수동고정·복원 실측 완료, 설정 UI 조작은 육안 확인 필요) |
 | M4   | 실증 계측·로그, 앱별 확장 칸, 대시보드                               | 정량 검증 표의 6개 항목을 실측한다 (기록·앱별 칸·대시보드 완료, 실측 남음) |
+| M5   | 안드로이드 (AccessibilityService + 오버레이, 5.5)                    | 브라우저에서 스위치로 링크를 골라 연다 (코어와 플랫폼 분리 완료, 나머지 미착수) |
 
 M1이 가장 위험도가 높다. **다른 마일스톤보다 먼저, 가장 작은 형태로 검증한다.**
 포커스를 뺏지 않는 창에서 키를 주입하는 것이 되지 않으면 나머지가 전부 무의미하다.
