@@ -34,3 +34,9 @@ cobertura.xml
 test.db
 .sisyphus
 tsconfig.tsbuildinfo
+
+# Android
+local.properties
+.gradle/
+apps/android/**/build/
+apps/android/.kotlin/

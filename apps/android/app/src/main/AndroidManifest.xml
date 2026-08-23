@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 다른 앱 위에 컨트롤러를 올린다. 이게 없으면 Activity로만 뜨는데,
+         그러면 조작할 대상 앱이 뒤로 밀려 제품이 성립하지 않는다. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- 오래 살아야 한다. 사용자는 스위치 말고 다른 조작 수단이 없어서
+         시스템이 조용히 죽이면 되살릴 방법이 없다. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- 스위치는 USB 시리얼로 붙는다(PRD 7절). HID 키보드가 아니라서
+         키 이벤트로는 오지 않는다. -->
+    <uses-feature android:name="android.hardware.usb.host" android:required="true" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@android:drawable/ic_menu_compass"
+        android:label="한번"
+        android:supportsRtl="false"
+        android:theme="@android:style/Theme.Material.Light">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="한번">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".OverlayService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="스위치 컨트롤러를 화면에 계속 띄워 둔다" />
+        </service>
+    </application>
+</manifest>
