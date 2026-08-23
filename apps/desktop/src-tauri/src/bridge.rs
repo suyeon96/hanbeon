@@ -13,6 +13,7 @@ use crate::action::Action;
 use crate::audio::{Audio, Cue};
 use crate::host::{Host, HostError, Notice};
 use crate::profile::{Profile, UndoMapping};
+use crate::switch::{Command, Led};
 use crate::{emit, window};
 
 /// 커서 상태가 바뀔 때마다 프론트로 보내는 이벤트.
@@ -48,6 +49,8 @@ struct IntervalPayload {
 pub struct TauriHost {
     app: AppHandle,
     audio: Audio,
+    /// 스위치의 LED. 상태를 두 감각으로 알린다는 원칙에서 소리의 짝이다.
+    led: Led,
     /// 프로필을 적을 폴더. 경로를 찾는 것은 플랫폼 쪽 일이다.
     config_dir: Option<PathBuf>,
     /// 저장 실패를 매번 찍지 않기 위한 최근 상태.
@@ -55,11 +58,12 @@ pub struct TauriHost {
 }
 
 impl TauriHost {
-    pub fn new(app: AppHandle, audio: Audio) -> Arc<Self> {
+    pub fn new(app: AppHandle, audio: Audio, led: Led) -> Arc<Self> {
         let config_dir = crate::paths::config_dir(&app).ok();
         Arc::new(Self {
             app,
             audio,
+            led,
             config_dir,
             last_save_failed: Mutex::new(false),
         })
@@ -97,6 +101,14 @@ impl Host for TauriHost {
 
     fn cue(&self, cue: Cue) {
         self.audio.play(cue);
+        // 커서가 움직일 때만 깜빡인다. 모든 신호를 깜빡이면 무엇이 일어났는지
+        // 구분되지 않아 오히려 알림이 사라진다. 멈추면 꺼서 '지금 돌고 있지
+        // 않다'를 눈으로도 알 수 있게 한다.
+        match cue {
+            Cue::Tick => self.led.send(Command::Flash),
+            Cue::Pause => self.led.send(Command::Off),
+            _ => {}
+        }
     }
 
     fn set_sound(&self, enabled: bool) {

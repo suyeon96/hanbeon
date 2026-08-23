@@ -21,6 +21,7 @@ mod preset;
 mod profile;
 mod scan;
 mod shortcut;
+mod switch;
 mod tray;
 mod window;
 
@@ -193,7 +194,9 @@ pub fn run() {
             )));
 
             let profile = Arc::new(Mutex::new(profile));
-            let host = bridge::TauriHost::new(app.handle().clone(), audio);
+            // 스위치를 먼저 띄운다. LED 손잡이를 Host가 쥐어야 하기 때문이다.
+            let (led, switch_events) = switch::watch();
+            let host = bridge::TauriHost::new(app.handle().clone(), audio, led);
             let scanner = Scanner::new(Arc::clone(&profile), host, journal.clone());
             let moves = window::MoveWatch::default();
 
@@ -201,6 +204,50 @@ pub fn run() {
             app.manage(Arc::clone(&detector));
             app.manage(scanner.clone());
             app.manage(moves.clone());
+
+            // 시리얼로 들어온 눌림/뗌을 제스처 판정에 넣는다. 전역 단축키와
+            // 같은 자리로 흘러 들어가므로 상태기계는 어디서 왔는지 모른다.
+            {
+                let scanner = scanner.clone();
+                let detector = Arc::clone(&detector);
+                let journal = journal.clone();
+                std::thread::spawn(move || {
+                    for event in switch_events {
+                        match event {
+                            switch::Event::Signal(switch::Signal::Press) => {
+                                if let Ok(mut detector) = detector.lock() {
+                                    detector.on_press(std::time::Instant::now());
+                                }
+                            }
+                            switch::Event::Signal(switch::Signal::Release) => {
+                                let judged = detector
+                                    .lock()
+                                    .ok()
+                                    .and_then(|mut d| d.on_release(std::time::Instant::now()));
+                                if let Some(judgement) = judged {
+                                    scanner.handle(judgement);
+                                }
+                            }
+                            switch::Event::Connected { port } => {
+                                if std::env::var("HANBEON_LOG").is_ok() {
+                                    eprintln!("[switch] 연결됨 {port}");
+                                }
+                                journal.record(journal::Event::Switch {
+                                    state: "connected",
+                                    key: port,
+                                });
+                            }
+                            switch::Event::Disconnected => {
+                                journal.record(journal::Event::Switch {
+                                    state: "disconnected",
+                                    key: String::new(),
+                                });
+                                scanner.switch_lost();
+                            }
+                        }
+                    }
+                });
+            }
 
             moves.watch(app.handle().clone(), Arc::clone(&profile));
             foreground::watch(app.handle().clone(), Arc::clone(&profile), scanner.clone());

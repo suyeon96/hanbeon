@@ -392,6 +392,19 @@ impl State {
         }
     }
 
+    /// 정지 상태를 못 박는다. 바뀌었으면 참.
+    ///
+    /// 길게 누름과 달리 오가지 않는다. 스위치가 뽑힌 것처럼 바깥 사정으로
+    /// 정지시킬 때 쓴다.
+    fn set_paused(&mut self, paused: bool, now: Instant) -> bool {
+        let next = if paused { Mode::Paused } else { Mode::Scanning };
+        if self.mode == next {
+            return false;
+        }
+        self.enter(next, self.interval, now);
+        true
+    }
+
     /// 길게 누름. 정지와 해제를 오간다.
     fn toggle_pause(&mut self, now: Instant) {
         let next = if self.mode == Mode::Paused {
@@ -516,6 +529,30 @@ impl Scanner {
         self.host.cue(Cue::Select);
         self.host.publish(Notice::State(Box::new(snapshot)));
         self.host.publish(Notice::Preset { message });
+    }
+
+    /// 스위치가 뽑혔다. 스캔을 정지로 내린다(PRD F10).
+    ///
+    /// 커서만 계속 도는 상태로 두면 사용자는 눌러도 아무 일이 없는 이유를 알 수
+    /// 없다. 다시 꽂아도 저절로 재개하지는 않는다. 재개는 사용자가 길게 눌러서
+    /// 한다 — 사람이 정한 것을 코드가 되돌리지 않는다(원칙 1).
+    pub fn switch_lost(&self) {
+        let snapshot = {
+            let Ok(mut state) = self.state.lock() else {
+                return;
+            };
+            let now = Instant::now();
+            if !state.set_paused(true, now) {
+                return;
+            }
+            state.snapshot(now)
+        };
+
+        if log_enabled() {
+            eprintln!("[scan] 스위치 연결이 끊겨 정지합니다");
+        }
+        self.host.cue(Cue::Pause);
+        self.host.publish(Notice::State(Box::new(snapshot)));
     }
 
     pub fn snapshot(&self) -> Option<Snapshot> {
