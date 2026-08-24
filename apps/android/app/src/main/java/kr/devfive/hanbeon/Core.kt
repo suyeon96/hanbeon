@@ -25,7 +25,8 @@ object Core {
         /** 0=뒤로가기 1=실행취소. */
         fun undo(mapping: Int): Boolean
 
-        fun openSettings(): Boolean
+        /** JNI가 시그니처 `(I)Z`로 찾는다. 인자는 안 쓰지만 빼면 NoSuchMethodError. */
+        fun openSettings(unused: Int): Boolean
 
         /** 앱별 칸 수가 달라졌다. 창을 맞춘다. */
         fun fitCells(extras: Int)
