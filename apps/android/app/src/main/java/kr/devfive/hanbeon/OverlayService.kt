@@ -88,7 +88,7 @@ class OverlayService : Service() {
         override fun undo(mapping: Int): Boolean =
             HanbeonAccessibilityService.instance?.back() ?: false
 
-        override fun openSettings(): Boolean {
+        override fun openSettings(unused: Int): Boolean {
             val intent =
                 Intent(this@OverlayService, MainActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -287,10 +287,14 @@ class OverlayService : Service() {
         private const val TAG = "한번"
         private const val CHANNEL = "hanbeon.overlay"
         private const val NOTIFICATION_ID = 1
-        private const val MARGIN = 32
 
-        /// 스위치 사용자는 곁눈으로도 자리를 알아봐야 한다. 화면 폭의 대부분을 쓴다.
-        private const val CONTROLLER_WIDTH_DP = 340f
+        /** 화면 가장자리와의 여백. 붙어 있어도 칸 자리는 읽힌다. */
+        private const val MARGIN = 12
+
+        /// 스위치 사용자는 곁눈으로도 자리를 알아봐야 하지만, 컨트롤러가 크면
+        /// 그만큼 조작할 앱을 가린다. 접근성 서비스는 가려 두드릴 수 없는 요소를
+        /// 스캔 대상에서 빼 버리므로 폭은 기호가 읽히는 최소한만 쓴다.
+        private const val CONTROLLER_WIDTH_DP = 200f
 
         fun start(context: android.content.Context) {
             val intent = Intent(context, OverlayService::class.java)
